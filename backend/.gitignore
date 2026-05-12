@@ -19,16 +19,6 @@ env/
 pip-wheel-metadata/
 *.egg-info/
 
-# Frontend dependencies and builds
-node_modules/
-dist/
-build/
-coverage/
-*.log
-
-# Local backups
-frontend_root_backup/
-
 # Test and tooling caches
 .pytest_cache/
 .mypy_cache/
