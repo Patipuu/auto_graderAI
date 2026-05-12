@@ -1,0 +1,6 @@
+{
+  "name": "AutoGrader AI",
+  "description": "Hệ thống chấm bài tự động sử dụng AI cho trắc nghiệm và tự luận ngắn.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
