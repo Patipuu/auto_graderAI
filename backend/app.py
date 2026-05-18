@@ -12,9 +12,7 @@ import io
 from dotenv import load_dotenv, dotenv_values
 import jwt
 from datetime import datetime, timedelta
-from werkzeug.security import check_password_hash, generate_password_hash
-import threading
-from pymongo import MongoClient
+from werkzeug.security import check_password_hash
 
 load_dotenv()
 _env_file = dotenv_values()
@@ -27,16 +25,9 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # ==================== CONFIG ====================
 SECRET_KEY = os.getenv('JWT_SECRET', 'your-secret-key-change-in-prod-2026')
-MONGO_URI = os.getenv('MONGO_URI', 'mongodb://localhost:27017/autograder')
-MONGO_DB_NAME = os.getenv('MONGO_DB_NAME', 'autograder')
-MONGO_COLLECTION = os.getenv('MONGO_COLLECTION', 'app_state')
-LEGACY_DB_PATH = os.getenv('LEGACY_DB_PATH', os.getenv('DB_PATH', './db.json'))
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
-# Lock for concurrent DB access within this process
-db_lock = threading.RLock()
-mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-mongo_collection = mongo_client[MONGO_DB_NAME][MONGO_COLLECTION]
+from data_access.database import load_db, save_db
 
 VALID_DIFFICULTIES = {'Dễ', 'Trung bình', 'Khó', 'Dá»…', 'Trung bÃ¬nh', 'KhÃ³'}
 
@@ -111,80 +102,6 @@ def normalize_rubric_groups(rubric_groups, question_count):
             groups_by_question[str(question_num)] = normalized_groups
 
     return groups_by_question
-
-# ==================== DATABASE FUNCTIONS ====================
-
-APP_STATE_ID = 'default'
-
-
-def default_db():
-    """Default application state."""
-    return {
-        "teachers": [
-            {
-                "id": "1",
-                "username": "teacher",
-                "password_hash": generate_password_hash("password"),
-                "email": "teacher@school.com"
-            },
-            {
-                "id": "2",
-                "username": "admin",
-                "password_hash": generate_password_hash("admin"),
-                "email": "admin@school.com"
-            }
-        ],
-        "exams": [],
-        "submissions": [],
-        "questions": []
-    }
-
-
-def _strip_mongo_id(data):
-    if isinstance(data, dict):
-        data.pop('_id', None)
-    return data
-
-
-def _load_legacy_db():
-    """Load the previous JSON DB once so existing local data can be migrated."""
-    if not os.path.exists(LEGACY_DB_PATH):
-        return None
-
-    try:
-        with open(LEGACY_DB_PATH, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else None
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-def load_db():
-    """Load application state from MongoDB."""
-    with db_lock:
-        doc = mongo_collection.find_one({'_id': APP_STATE_ID})
-        if doc is None:
-            init_db()
-            doc = mongo_collection.find_one({'_id': APP_STATE_ID})
-        return _strip_mongo_id(doc or default_db())
-
-
-def save_db(data):
-    """Save application state to MongoDB."""
-    with db_lock:
-        state = dict(data or {})
-        state['_id'] = APP_STATE_ID
-        mongo_collection.replace_one({'_id': APP_STATE_ID}, state, upsert=True)
-
-
-def init_db():
-    """Initialize MongoDB with default state or migrate the old JSON DB."""
-    with db_lock:
-        if mongo_collection.find_one({'_id': APP_STATE_ID}) is not None:
-            return
-
-        initial_state = _load_legacy_db() or default_db()
-        save_db(initial_state)
 
 # ==================== AUTH MIDDLEWARE ====================
 
@@ -328,7 +245,7 @@ def import_questions():
 @app.route('/api/questions/import-text', methods=['POST'])
 def import_questions_from_text():
     """Parse and import questions from raw text on the backend."""
-    from ai_service import parse_questions_from_text
+    from services.ai_service import parse_questions_from_text
 
     data = request.json or {}
     text = data.get('text', '')
@@ -345,7 +262,7 @@ def import_questions_from_text():
 @app.route('/api/questions/import-file', methods=['POST'])
 def import_questions_from_file():
     """Extract text from txt/docx/pdf and import parsed questions."""
-    from ai_service import parse_questions_from_text
+    from services.ai_service import parse_questions_from_text
 
     upload = request.files.get('file')
     if not upload:
@@ -669,7 +586,7 @@ def grade_submission():
     Request: { "base64Image", "mimeType", "examId" }
     Response: { "studentName", "studentId", "results", "totalScore", "confidence" }
     """
-    from ai_service import grade_submission_with_gemini
+    from services.ai_service import grade_submission_with_gemini
 
     data = request.json or {}
     required = ['base64Image', 'mimeType', 'examId']
@@ -699,7 +616,7 @@ def re_evaluate_question():
     Request: { "submissionId", "questionNum", "studentAnswer" }
     Response: { "score", "isCorrect", "feedback" }
     """
-    from ai_service import evaluate_response
+    from services.ai_service import evaluate_response
 
     data = request.json or {}
     required = ['submissionId', 'questionNum', 'studentAnswer']
@@ -761,7 +678,7 @@ def overall_feedback():
     Request: { "submissionId" }
     Response: { "feedback": str }
     """
-    from ai_service import analyze_overall_performance
+    from services.ai_service import analyze_overall_performance
 
     data = request.json or {}
     submission_id = data.get('submissionId')
@@ -804,6 +721,7 @@ def internal_error(error):
 # ==================== MAIN ====================
 
 if __name__ == '__main__':
+    from data_access.database import init_db, MONGO_URI, MONGO_DB_NAME, MONGO_COLLECTION
     os.environ.setdefault('FLASK_ENV', 'development')
     init_db()
     print(f"MongoDB initialized at {MONGO_URI}, database={MONGO_DB_NAME}, collection={MONGO_COLLECTION}")

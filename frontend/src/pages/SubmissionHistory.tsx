@@ -39,8 +39,8 @@ export default function SubmissionHistory() {
     }
   };
 
-  const filteredSubmissions = submissions.filter(s => 
-    (s.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredSubmissions = submissions.filter(s =>
+    (s.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (s.studentId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (s.examTitle || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -58,9 +58,9 @@ export default function SubmissionHistory() {
         <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input 
-              placeholder="Tìm tên học sinh, ID hoặc tên đề..." 
-              className="w-full pl-10 pr-4 h-10 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all" 
+            <input
+              placeholder="Tìm tên học sinh, ID hoặc tên đề..."
+              className="w-full pl-10 pr-4 h-10 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -83,7 +83,7 @@ export default function SubmissionHistory() {
             <TableBody>
               <AnimatePresence>
                 {filteredSubmissions.map((sub) => (
-                  <motion.tr 
+                  <motion.tr
                     key={sub.id}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -92,46 +92,46 @@ export default function SubmissionHistory() {
                   >
                     <TableCell className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                         <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-                            <User className="w-4 h-4" />
-                         </div>
-                         <div>
-                            <div className="font-bold text-slate-800 text-sm">{sub.studentName || 'Học sinh ẩn danh'}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">MSHS: {sub.studentId || '-'}</div>
-                         </div>
+                        <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                          <User className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-800 text-sm">{sub.studentName || 'Học sinh ẩn danh'}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">MSHS: {sub.studentId || '-'}</div>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="px-6 py-4">
                       <div className="flex items-center gap-2">
-                         <FileText className="w-3 h-3 text-slate-400" />
-                         <span className="text-sm font-medium text-slate-600">{sub.examTitle}</span>
+                        <FileText className="w-3 h-3 text-slate-400" />
+                        <span className="text-sm font-medium text-slate-600">{sub.examTitle}</span>
                       </div>
                     </TableCell>
                     <TableCell className="px-6 py-4">
                       <div className="flex flex-col gap-1">
-                         <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-black text-blue-600">{sub.totalScore.toFixed(1)}</span>
-                            <span className="text-xs text-slate-400">/ 10</span>
-                         </div>
-                         <div className="flex items-center gap-1">
-                            <div className="w-24 h-1 bg-slate-100 rounded-full overflow-hidden">
-                               <div className="h-full bg-green-500" style={{ width: `${sub.totalQuestions ? (sub.correctAnswers / sub.totalQuestions) * 100 : 0}%` }} />
-                            </div>
-                            <span className="text-[9px] font-bold text-slate-400">{sub.correctAnswers}/{sub.totalQuestions}</span>
-                         </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-black text-blue-600">{sub.totalScore.toFixed(1)}</span>
+                          <span className="text-xs text-slate-400">/ 10</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-24 h-1 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-green-500" style={{ width: `${sub.totalQuestions ? (sub.correctAnswers / sub.totalQuestions) * 100 : 0}%` }} />
+                          </div>
+                          <span className="text-[9px] font-bold text-slate-400">{sub.correctAnswers}/{sub.totalQuestions}</span>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="px-6 py-4 text-slate-400 text-xs font-medium">
                       <div className="flex items-center gap-1.5">
-                         <Calendar className="w-3 h-3" />
-                         {new Date(sub.gradedAt).toLocaleDateString('vi-VN')}
+                        <Calendar className="w-3 h-3" />
+                        {new Date(sub.gradedAt).toLocaleDateString('vi-VN')}
                       </div>
                     </TableCell>
                     <TableCell className="px-6 py-4 text-right">
                       <Link to={`/results/${sub.id}`}>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="h-8 gap-2 text-[10px] font-bold uppercase tracking-widest text-slate-500 hover:text-blue-600 hover:bg-blue-50"
                         >
                           <Eye className="h-3 w-3" /> Chi tiết
@@ -145,14 +145,14 @@ export default function SubmissionHistory() {
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-20 text-slate-400 italic bg-white">
                     <div className="flex flex-col items-center gap-4">
-                       <BarChart className="w-12 h-12 text-slate-100" />
-                       <div>
-                         <p className="text-sm font-bold">Chưa có dữ liệu bài chấm</p>
-                         <p className="text-xs opacity-60">Các kết quả chấm bài sẽ xuất hiện tại đây.</p>
-                       </div>
-                       <Link to="/upload">
-                         <Button variant="outline" className="text-blue-600 border-blue-200 text-xs font-bold uppercase">Bắt đầu chấm ngay</Button>
-                       </Link>
+                      <BarChart className="w-12 h-12 text-slate-100" />
+                      <div>
+                        <p className="text-sm font-bold">Chưa có dữ liệu bài chấm</p>
+                        <p className="text-xs opacity-60">Các kết quả chấm bài sẽ xuất hiện tại đây.</p>
+                      </div>
+                      <Link to="/upload">
+                        <Button variant="outline" className="text-blue-600 border-blue-200 text-xs font-bold uppercase">Bắt đầu chấm ngay</Button>
+                      </Link>
                     </div>
                   </TableCell>
                 </TableRow>
