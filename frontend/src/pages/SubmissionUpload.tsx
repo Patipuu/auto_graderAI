@@ -36,6 +36,8 @@ export default function SubmissionUpload() {
     const exam = exams.find(e => e.id === selectedExamId);
     setIsProcessing(true);
     setProgress(20);
+    
+    let progressInterval: NodeJS.Timeout | null = null;
 
     try {
       // Step 1: Read file to base64
@@ -50,10 +52,24 @@ export default function SubmissionUpload() {
       const base64 = await base64Promise;
       setProgress(40);
 
+      // Simulate progress during AI processing
+      progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 95) {
+            if (progressInterval) clearInterval(progressInterval);
+            return 95;
+          }
+          const increment = Math.max(1, (95 - prev) * 0.05);
+          return Math.min(95, prev + increment);
+        });
+      }, 1000);
+
       // Step 2: AI Processing
       toast.info('Đang gửi bài cho AI xử lý...');
       const aiResult = await aiGradingService.gradeSubmission(base64, file.type || 'image/jpeg', selectedExamId);
-      setProgress(80);
+      
+      if (progressInterval) clearInterval(progressInterval);
+      setProgress(95);
 
       // Step 3: Save to local DB via API
       const saveRes = await fetch('/api/submissions', {
@@ -79,6 +95,7 @@ export default function SubmissionUpload() {
       toast.error('Có lỗi xảy ra trong quá trình xử lý');
       console.error(error);
     } finally {
+      if (progressInterval) clearInterval(progressInterval);
       setIsProcessing(false);
     }
   };
@@ -167,7 +184,7 @@ export default function SubmissionUpload() {
                        <Loader2 className="w-3 h-3 animate-spin" />
                        Xử lý bởi Gemini 1.5 Flash...
                     </div>
-                    <span>{progress}%</span>
+                    <span>{Math.round(progress)}%</span>
                   </div>
                   <Progress value={progress} className="h-1.5 bg-blue-100" />
                   <p className="text-[10px] text-blue-400 italic">Đang trích xuất OCR và phân tích ngữ nghĩa...</p>

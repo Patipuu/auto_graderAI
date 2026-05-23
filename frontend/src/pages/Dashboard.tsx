@@ -9,7 +9,9 @@ export default function Dashboard() {
   const [stats, setStats] = useState({
     totalExams: 0,
     totalSubmissions: 0,
-    avgScore: 0
+    avgScore: 0,
+    needsReview: 0,
+    latestSubmission: null as any
   });
 
   useEffect(() => {
@@ -28,7 +30,11 @@ export default function Dashboard() {
           ? submissions.reduce((acc: number, s: any) => acc + s.totalScore, 0) / totalSubmissions 
           : 0;
 
-        setStats({ totalExams, totalSubmissions, avgScore });
+        const needsReview = submissions.filter((s: any) => s.requiresManualReview).length;
+        const sortedSubmissions = [...submissions].sort((a: any, b: any) => new Date(b.processedAt || 0).getTime() - new Date(a.processedAt || 0).getTime());
+        const latestSubmission = sortedSubmissions[0] || null;
+
+        setStats({ totalExams, totalSubmissions, avgScore, needsReview, latestSubmission });
       } catch (err) {
         console.error(err);
       }
@@ -74,25 +80,27 @@ export default function Dashboard() {
         className="grid grid-cols-1 md:grid-cols-4 gap-4"
       >
         {[
-          { label: "Tổng số đề thi", value: stats.totalExams, icon: FileText, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Bài đã chấm", value: stats.totalSubmissions, icon: CheckSquare, color: "text-green-600", bg: "bg-green-50" },
-          { label: "Điểm trung bình", value: stats.avgScore.toFixed(1), icon: BarChart3, color: "text-purple-600", bg: "bg-purple-50" },
-          { label: "Cần xử lý", value: "0", icon: Users, color: "text-orange-600", bg: "bg-orange-50" },
+          { label: "Tổng số đề thi", value: stats.totalExams, icon: FileText, color: "text-blue-600", bg: "bg-blue-50", link: "/exams" },
+          { label: "Bài đã chấm", value: stats.totalSubmissions, icon: CheckSquare, color: "text-green-600", bg: "bg-green-50", link: "/history" },
+          { label: "Điểm trung bình", value: stats.avgScore.toFixed(1), icon: BarChart3, color: "text-purple-600", bg: "bg-purple-50", link: "/history" },
+          { label: "Cần xử lý", value: stats.needsReview, icon: Users, color: "text-orange-600", bg: "bg-orange-50", link: "/history" },
         ].map((stat, idx) => (
           <motion.div key={idx} variants={item}>
-            <Card className="card-polish">
-              <CardContent className="p-5">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{stat.label}</p>
-                    <div className="text-2xl font-bold mt-1">{stat.value}</div>
+            <Link to={stat.link} className="block group">
+              <Card className="card-polish transition-all group-hover:shadow-md group-hover:border-blue-200 group-hover:-translate-y-0.5">
+                <CardContent className="p-5">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{stat.label}</p>
+                      <div className="text-2xl font-bold mt-1 group-hover:text-blue-600 transition-colors">{stat.value}</div>
+                    </div>
+                    <div className={`p-2 rounded-lg ${stat.bg} ${stat.color} transition-transform group-hover:scale-110`}>
+                      <stat.icon className="w-4 h-4" />
+                    </div>
                   </div>
-                  <div className={`p-2 rounded-lg ${stat.bg} ${stat.color}`}>
-                    <stat.icon className="w-4 h-4" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </Link>
           </motion.div>
         ))}
       </motion.div>
@@ -140,41 +148,20 @@ export default function Dashboard() {
                   Chưa có hoạt động nào.
                 </div>
               ) : (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-transparent hover:border-slate-200 transition-all cursor-pointer group">
+                <Link to={`/results/${stats.latestSubmission?.id}`} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 border border-transparent hover:border-slate-200 transition-all group">
                   <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shadow-sm">
                     <CheckSquare className="w-5 h-5 text-green-600" />
                   </div>
                   <div className="flex-1">
-                    <h4 className="text-xs font-bold text-slate-800">Bài chấm mới</h4>
-                    <p className="text-[10px] text-slate-500">Lớp 12A1 • GK1 Toán</p>
+                    <h4 className="text-xs font-bold text-slate-800">Bài chấm mới nhất: {stats.latestSubmission?.studentName || 'Ẩn danh'}</h4>
+                    <p className="text-[10px] text-slate-500">{stats.latestSubmission?.examTitle || 'Không rõ đề thi'} • {new Date(stats.latestSubmission?.processedAt).toLocaleDateString('vi-VN')}</p>
                   </div>
                   <ArrowUpRight className="w-3 h-3 text-slate-300 group-hover:text-blue-600 transition-colors" />
-                </div>
+                </Link>
               )}
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Note from the theme */}
-      <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/20 blur-3xl rounded-full -mr-16 -mt-16 group-hover:bg-blue-600/40 transition-colors" />
-        <div className="relative z-10 flex items-center justify-between">
-          <div>
-            <p className="font-bold mb-2 uppercase tracking-widest text-[10px] text-blue-400">Trạng thái hệ thống</p>
-            <ul className="grid grid-cols-2 gap-x-8 gap-y-2 text-[11px] text-slate-400">
-              <li className="flex items-center gap-2">• OpenCV OMR: <span className="text-green-400 font-bold uppercase transition-all">Online</span></li>
-              <li className="flex items-center gap-2">• OCR Confidence: <span className="text-blue-400 font-bold uppercase transition-all">92% Avg</span></li>
-              <li className="flex items-center gap-2">• Database: <span className="text-green-400 font-bold uppercase transition-all">Connected</span></li>
-              <li className="flex items-center gap-2">• Server Node: <span className="text-blue-400 font-bold uppercase transition-all">Running</span></li>
-            </ul>
-          </div>
-          <div className="hidden md:block">
-             <div className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-[10px] font-mono text-slate-500">
-               Rule BR-02 applied: Essay OCR marked for manual validation.
-             </div>
-          </div>
-        </div>
       </div>
     </div>
   );
