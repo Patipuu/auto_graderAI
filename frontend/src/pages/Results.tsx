@@ -185,8 +185,8 @@ export default function Results() {
         <AlertCircle className="w-12 h-12 text-slate-200 mx-auto mb-4" />
         <h2 className="text-xl font-bold text-slate-800">Không tìm thấy bài làm</h2>
         <p className="text-sm text-slate-500 mt-1">Vui lòng kiểm tra lại ID hoặc thực hiện chấm bài mới.</p>
-        <Link to="/" className="inline-block mt-6">
-           <Button variant="outline" className="rounded-xl">Quay lại Dashboard</Button>
+        <Link to="/history" className="inline-block mt-6">
+           <Button variant="outline" className="rounded-xl">Quay lại Lịch sử chấm bài</Button>
         </Link>
       </div>
     );
@@ -198,7 +198,7 @@ export default function Results() {
     <div className="space-y-8 pb-12">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link to="/">
+          <Link to="/history">
             <Button variant="ghost" size="icon" className="rounded-xl hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 transition-all">
               <ArrowLeft className="w-4 h-4" />
             </Button>
