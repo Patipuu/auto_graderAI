@@ -52,6 +52,8 @@ export default function ExamManagement() {
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterSubject, setFilterSubject] = useState('');
+  const [filterDate, setFilterDate] = useState('');
   const [bankSearchQuery, setBankSearchQuery] = useState('');
   const [bankTypeFilter, setBankTypeFilter] = useState<'all' | 'trac-nghiem' | 'tu-luan'>('all');
   const [bankDifficultyFilter, setBankDifficultyFilter] = useState<'all' | 'Dễ' | 'Trung bình' | 'Khó'>('all');
@@ -279,10 +281,14 @@ export default function ExamManagement() {
     }
   };
 
-  const filteredExams = exams.filter(e => 
-    e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    e.subject.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredExams = exams.filter(e => {
+    const matchSearch = e.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                        e.subject.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchSubject = filterSubject ? e.subject === filterSubject : true;
+    const dateStr = e.createdAt ? new Date(e.createdAt).toISOString().split('T')[0] : '';
+    const matchDate = filterDate ? dateStr === filterDate : true;
+    return matchSearch && matchSubject && matchDate;
+  });
 
   const bankSubjects = Array.from(new Set(bankQuestions.map(q => q.subject))).filter(Boolean);
 
@@ -881,18 +887,37 @@ export default function ExamManagement() {
       </div>
 
       <Card className="card-polish">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="relative flex-1 max-w-sm">
+        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-4 bg-slate-50/50">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input 
               placeholder="Tìm kiếm đề thi..." 
-              className="pl-10 h-10 bg-white border-slate-200 text-sm focus:ring-blue-500" 
+              className="pl-10 h-10 bg-white border-slate-200 text-sm focus:ring-blue-500 rounded-xl" 
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
-          <div className="flex items-center gap-2">
-             <span className="text-[10px] font-bold text-slate-400 uppercase mr-2 truncate">Đang hiển thị {filteredExams.length} đề thi</span>
+          
+          <select 
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
+            value={filterSubject}
+            onChange={e => setFilterSubject(e.target.value)}
+          >
+            <option value="">Tất cả môn</option>
+            {Array.from(new Set(exams.map(e => e.subject).filter(Boolean))).map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          
+          <input 
+            type="date"
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
+            value={filterDate}
+            onChange={e => setFilterDate(e.target.value)}
+          />
+
+          <div className="ml-auto text-[10px] font-bold text-slate-400 uppercase truncate">
+             Hiển thị {filteredExams.length} đề thi
           </div>
         </div>
         <CardContent className="p-0">

@@ -11,6 +11,7 @@ interface Submission {
   id: string;
   studentName: string;
   studentId: string;
+  studentClass?: string;
   examId: string;
   examTitle: string;
   totalScore: number;
@@ -22,6 +23,8 @@ interface Submission {
 export default function SubmissionHistory() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterClass, setFilterClass] = useState('');
+  const [filterDate, setFilterDate] = useState('');
 
   useEffect(() => {
     fetchSubmissions();
@@ -39,11 +42,18 @@ export default function SubmissionHistory() {
     }
   };
 
-  const filteredSubmissions = submissions.filter(s =>
-    (s.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.studentId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.examTitle || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredSubmissions = submissions.filter(s => {
+    const matchSearch = (s.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.studentId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.examTitle || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchClass = filterClass ? (s.studentClass || '') === filterClass : true;
+
+    const gradedDateStr = s.gradedAt ? new Date(s.gradedAt).toISOString().split('T')[0] : '';
+    const matchDate = filterDate ? gradedDateStr === filterDate : true;
+
+    return matchSearch && matchClass && matchDate;
+  });
 
   return (
     <div className="space-y-6">
@@ -55,8 +65,8 @@ export default function SubmissionHistory() {
       </div>
 
       <Card className="card-polish">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="relative flex-1 max-w-sm">
+        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-4 bg-slate-50/50">
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               placeholder="Tìm tên học sinh, ID hoặc tên đề..."
@@ -65,8 +75,27 @@ export default function SubmissionHistory() {
               onChange={e => setSearchQuery(e.target.value)}
             />
           </div>
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-            Tổng cộng: {filteredSubmissions.length} bài đã chấm
+
+          <select
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
+            value={filterClass}
+            onChange={e => setFilterClass(e.target.value)}
+          >
+            <option value="">Tất cả lớp</option>
+            {Array.from(new Set(submissions.map(s => s.studentClass).filter(Boolean))).map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
+          <input
+            type="date"
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
+            value={filterDate}
+            onChange={e => setFilterDate(e.target.value)}
+          />
+
+          <div className="ml-auto text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+            Tổng cộng: {filteredSubmissions.length} bài
           </div>
         </div>
         <CardContent className="p-0">
@@ -74,6 +103,7 @@ export default function SubmissionHistory() {
             <TableHeader className="table-header-polish">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="px-6 py-4 font-semibold text-xs">Học sinh</TableHead>
+                <TableHead className="px-6 py-4 font-semibold text-xs">Lớp</TableHead>
                 <TableHead className="px-6 py-4 font-semibold text-xs">Đề thi</TableHead>
                 <TableHead className="px-6 py-4 font-semibold text-xs">Kết quả</TableHead>
                 <TableHead className="px-6 py-4 font-semibold text-xs">Ngày chấm</TableHead>
@@ -97,9 +127,20 @@ export default function SubmissionHistory() {
                         </div>
                         <div>
                           <div className="font-bold text-slate-800 text-sm">{sub.studentName || 'Học sinh ẩn danh'}</div>
-                          <div className="text-[10px] text-slate-400 font-mono">MSHS: {sub.studentId || '-'}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            MSHS: {sub.studentId || '-'}
+                          </div>
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell className="px-6 py-4">
+                      {sub.studentClass ? (
+                        <Badge variant="outline" className="text-xs font-bold text-blue-600 bg-blue-50 border-blue-200 uppercase">
+                          {sub.studentClass}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-slate-400 italic">Chưa có lớp</span>
+                      )}
                     </TableCell>
                     <TableCell className="px-6 py-4">
                       <div className="flex items-center gap-2">
@@ -143,7 +184,7 @@ export default function SubmissionHistory() {
               </AnimatePresence>
               {filteredSubmissions.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-20 text-slate-400 italic bg-white">
+                  <TableCell colSpan={6} className="text-center py-20 text-slate-400 italic bg-white">
                     <div className="flex flex-col items-center gap-4">
                       <BarChart className="w-12 h-12 text-slate-100" />
                       <div>

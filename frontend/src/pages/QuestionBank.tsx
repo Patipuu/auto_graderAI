@@ -25,6 +25,9 @@ interface Question {
 export default function QuestionBank() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState('');
+  const [filterDifficulty, setFilterDifficulty] = useState('');
+  const [filterSubject, setFilterSubject] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importText, setImportText] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -159,10 +162,15 @@ export default function QuestionBank() {
     }
   };
 
-  const filteredQuestions = questions.filter(q => 
-    q.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    q.subject.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredQuestions = questions.filter(q => {
+    const matchSearch = q.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        q.subject.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchType = filterType ? q.type === filterType : true;
+    const matchDifficulty = filterDifficulty ? q.difficulty === filterDifficulty : true;
+    const matchSubject = filterSubject ? q.subject === filterSubject : true;
+    
+    return matchSearch && matchType && matchDifficulty && matchSubject;
+  });
 
   return (
     <div className="space-y-6 pb-12">
@@ -286,6 +294,43 @@ export default function QuestionBank() {
                       value={searchQuery}
                       onChange={e => setSearchQuery(e.target.value)}
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-2 mt-4">
+                  <Label className="text-[10px] font-bold text-slate-400">BỘ LỌC</Label>
+                  <div className="grid grid-cols-1 gap-2">
+                    <select 
+                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                      value={filterType}
+                      onChange={e => setFilterType(e.target.value)}
+                    >
+                      <option value="">Tất cả loại câu hỏi</option>
+                      <option value="trac-nghiem">Trắc nghiệm</option>
+                      <option value="tu-luan">Tự luận</option>
+                    </select>
+                    
+                    <select 
+                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                      value={filterDifficulty}
+                      onChange={e => setFilterDifficulty(e.target.value)}
+                    >
+                      <option value="">Tất cả độ khó</option>
+                      <option value="Dễ">Dễ</option>
+                      <option value="Trung bình">Trung bình</option>
+                      <option value="Khó">Khó</option>
+                    </select>
+                    
+                    <select 
+                      className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:ring-2 focus:ring-blue-500"
+                      value={filterSubject}
+                      onChange={e => setFilterSubject(e.target.value)}
+                    >
+                      <option value="">Tất cả môn học</option>
+                      {Array.from(new Set(questions.map(q => q.subject))).map(subject => (
+                        <option key={subject} value={subject}>{subject}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </CardContent>

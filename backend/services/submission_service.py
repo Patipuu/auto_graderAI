@@ -42,6 +42,7 @@ class SubmissionService:
             'examTitle': data['examTitle'],
             'studentName': data.get('studentName'),
             'studentId': data.get('studentId'),
+            'studentClass': data.get('studentClass'),
             'results': data['results'],
             'totalScore': total_score,
             'maxScore': float(data.get('maxScore', calculated_max)),
@@ -78,6 +79,10 @@ class SubmissionService:
 
         if 'overallFeedback' in data:
             update_payload['overallFeedback'] = data['overallFeedback']
+
+        for field in ['studentName', 'studentId', 'studentClass']:
+            if field in data:
+                update_payload[field] = data[field]
 
         update_payload['finalizedAt'] = now_iso()
         

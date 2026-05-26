@@ -156,16 +156,18 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
     Hãy thực hiện các bước sau:
     1. Trích xuất Tên học sinh từ ảnh (nếu có)
     2. Trích xuất Mã học sinh (nếu có)
-    3. Xác định đáp án của học sinh cho từng câu hỏi
-    4. Với trắc nghiệm: so sánh đáp án A/B/C/D.
-    5. Với tự luận/toán/văn: nếu có Structured rubric item groups thì bắt buộc chấm lần lượt từng item trong từng nhóm trước; nếu không có thì dùng đáp án mẫu như rubric/dàn ý.
-    6. Sau khi chấm từng item, tự soát lại một lần nữa: có item nào học sinh đã làm đúng nhưng chưa được cộng điểm không, có item nào bị cộng điểm khi chưa có bằng chứng không.
-    7. Cung cấp nhận xét chỉ rõ ý/bước đúng, ý/bước sai hoặc thiếu.
+    3. Trích xuất Lớp học (ví dụ: Lớp 10A1, Class 9B... Nếu có thì ghi lại, không có thì để null)
+    4. Xác định đáp án của học sinh cho từng câu hỏi
+    5. Với trắc nghiệm: so sánh đáp án A/B/C/D.
+    6. Với tự luận/toán/văn: nếu có Structured rubric item groups thì bắt buộc chấm lần lượt từng item trong từng nhóm trước; nếu không có thì dùng đáp án mẫu như rubric/dàn ý.
+    7. Sau khi chấm từng item, tự soát lại một lần nữa: có item nào học sinh đã làm đúng nhưng chưa được cộng điểm không, có item nào bị cộng điểm khi chưa có bằng chứng không.
+    8. Cung cấp nhận xét chỉ rõ ý/bước đúng, ý/bước sai hoặc thiếu.
     
     Trả về JSON với cấu trúc chính xác sau (KHÔNG có text khác):
     {{
         "studentName": "Tên học sinh hoặc null",
         "studentId": "Mã học sinh hoặc null",
+        "studentClass": "Tên lớp học hoặc null",
         "results": [
             {{
                 "questionNum": 1,
@@ -288,6 +290,7 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
         return {
             'studentName': result.get('studentName'),
             'studentId': result.get('studentId'),
+            'studentClass': result.get('studentClass'),
             'results': sanitized_results,
             'totalScore': total_score,
             'maxScore': max_score,
