@@ -52,9 +52,11 @@ export default function SubmissionHistory() {
   };
 
   const filteredSubmissions = submissions.filter(s => {
-    const matchSearch = (s.studentName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.studentId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.examTitle || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const matchSearch = (s.studentName || '').toLowerCase().includes(q) ||
+      (s.studentId || '').toLowerCase().includes(q) ||
+      (s.studentClass || '').toLowerCase().includes(q) ||
+      (s.examTitle || '').toLowerCase().includes(q);
 
     const matchClass = filterClass ? (s.studentClass || '') === filterClass : true;
 
@@ -78,7 +80,7 @@ export default function SubmissionHistory() {
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
-              placeholder="Tìm tên học sinh, ID hoặc tên đề..."
+              placeholder="Tìm kiếm..."
               className="w-full pl-10 pr-4 h-10 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -94,8 +96,8 @@ export default function SubmissionHistory() {
             {Array.from(new Set(submissions.map(s => s.studentClass).filter(Boolean)))
               .sort((a, b) => (a as string).localeCompare(b as string, 'vi', { numeric: true }))
               .map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+                <option key={c} value={c}>{c}</option>
+              ))}
           </select>
 
           <input
