@@ -7,6 +7,7 @@ export interface GradingResult {
 export interface SubmissionGradeResult {
   studentName?: string | null;
   studentId?: string | null;
+  studentClass?: string | null;
   results: Array<{
     questionNum: number;
     studentAnswer: string;

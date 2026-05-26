@@ -236,9 +236,38 @@ export default function Results() {
                   </div>
                </div>
             </div>
-            <CardContent className="pt-14 text-center pb-8 px-6">
-              <h3 className="text-lg font-black text-slate-900 capitalize leading-tight">{submission.studentName || 'Học sinh ẩn danh'}</h3>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Căn cước: {id?.slice(0, 8)}</p>
+            <CardContent className="pt-14 pb-8 px-6 text-center">
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tên học sinh</label>
+                  <Input 
+                    value={submission.studentName || ''} 
+                    onChange={e => setSubmission({ ...submission, studentName: e.target.value })}
+                    placeholder="Nhập tên học sinh..."
+                    className="h-9 text-sm font-bold text-center border-slate-200 mt-1"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mã số (MSHS)</label>
+                    <Input 
+                      value={submission.studentId || ''} 
+                      onChange={e => setSubmission({ ...submission, studentId: e.target.value })}
+                      placeholder="Trống..."
+                      className="h-9 text-xs font-mono text-center border-slate-200 mt-1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Lớp học</label>
+                    <Input 
+                      value={submission.studentClass || ''} 
+                      onChange={e => setSubmission({ ...submission, studentClass: e.target.value })}
+                      placeholder="Trống..."
+                      className="h-9 text-xs font-bold text-center border-slate-200 mt-1 uppercase"
+                    />
+                  </div>
+                </div>
+              </div>
               
               <div className="mt-8 flex flex-col items-center bg-slate-50 rounded-2xl p-6 border border-slate-100">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Kết quả AI</span>
