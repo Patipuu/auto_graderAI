@@ -20,6 +20,15 @@ interface Submission {
   gradedAt: string;
 }
 
+const getClassBadgeColor = (className?: string) => {
+  if (!className) return '';
+  const name = className.toUpperCase().trim();
+  if (name.startsWith('10')) return 'text-green-600 bg-green-50 border-green-200';
+  if (name.startsWith('11')) return 'text-blue-600 bg-blue-50 border-blue-200';
+  if (name.startsWith('12')) return 'text-red-600 bg-red-50 border-red-200';
+  return 'text-slate-600 bg-slate-50 border-slate-200';
+};
+
 export default function SubmissionHistory() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -82,7 +91,9 @@ export default function SubmissionHistory() {
             onChange={e => setFilterClass(e.target.value)}
           >
             <option value="">Tất cả lớp</option>
-            {Array.from(new Set(submissions.map(s => s.studentClass).filter(Boolean))).map(c => (
+            {Array.from(new Set(submissions.map(s => s.studentClass).filter(Boolean)))
+              .sort((a, b) => (a as string).localeCompare(b as string, 'vi', { numeric: true }))
+              .map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
@@ -135,7 +146,7 @@ export default function SubmissionHistory() {
                     </TableCell>
                     <TableCell className="px-6 py-4">
                       {sub.studentClass ? (
-                        <Badge variant="outline" className="text-xs font-bold text-blue-600 bg-blue-50 border-blue-200 uppercase">
+                        <Badge variant="outline" className={`text-xs font-bold uppercase ${getClassBadgeColor(sub.studentClass)}`}>
                           {sub.studentClass}
                         </Badge>
                       ) : (
