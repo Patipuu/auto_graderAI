@@ -95,3 +95,57 @@ class SubmissionService:
         if not deleted:
             return False, "Submission not found"
         return True, None
+
+    @staticmethod
+    def get_error_rate_stats():
+        from data_access.exam_repository import ExamRepository
+        submissions = SubmissionRepository.get_all()
+        exams = ExamRepository.get_all()
+        exam_dict = {str(e['id']): e for e in exams}
+
+        stats_map = {} # key: examId_questionNum
+        
+        for sub in submissions:
+            exam_id = str(sub.get('examId'))
+            results = sub.get('results', [])
+            
+            for res in results:
+                q_num = res.get('questionNum')
+                if not q_num: continue
+                
+                key = f"{exam_id}_{q_num}"
+                if key not in stats_map:
+                    exam = exam_dict.get(exam_id)
+                    q_type = 'unknown'
+                    exam_title = sub.get('examTitle', 'Unknown Exam')
+                    if exam:
+                        exam_title = exam.get('title', exam_title)
+                        # Determine type from answer key format
+                        ans = exam.get('answerKey', {}).get(str(q_num), '')
+                        if ans in ['A', 'B', 'C', 'D']:
+                            q_type = 'trac-nghiem'
+                        elif len(str(ans)) > 1:
+                            q_type = 'tu-luan'
+                            
+                    stats_map[key] = {
+                        'examId': exam_id,
+                        'examTitle': exam_title,
+                        'questionNum': q_num,
+                        'questionType': q_type,
+                        'totalSubmissions': 0,
+                        'incorrectCount': 0
+                    }
+                
+                stats_map[key]['totalSubmissions'] += 1
+                if not res.get('isCorrect'):
+                    stats_map[key]['incorrectCount'] += 1
+                    
+        stats_list = []
+        for v in stats_map.values():
+            if v['totalSubmissions'] > 0:
+                v['errorRate'] = round((v['incorrectCount'] / v['totalSubmissions']) * 100, 1)
+                stats_list.append(v)
+                
+        # Sort by error rate descending
+        stats_list.sort(key=lambda x: x['errorRate'], reverse=True)
+        return stats_list

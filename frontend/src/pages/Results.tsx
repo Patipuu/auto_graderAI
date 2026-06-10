@@ -20,6 +20,11 @@ export default function Results() {
   const [isEvaluating, setIsEvaluating] = useState<number[]>([]);
   const [overallFeedback, setOverallFeedback] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  
+  // Highlight state: questionNum -> array of highlights
+  const [highlights, setHighlights] = useState<Record<number, Array<{id: string, text: string, note: string}>>>({});
+  const [selectionBox, setSelectionBox] = useState<{show: boolean, x: number, y: number, text: string, questionNum: number} | null>(null);
+  const [highlightNote, setHighlightNote] = useState('');
 
   useEffect(() => {
     const fetchResult = async () => {
@@ -29,6 +34,18 @@ export default function Results() {
         const data = await res.json();
         setSubmission(data);
         setOverallFeedback(data.overallFeedback || '');
+        
+        // Extract highlights from results
+        const loadedHighlights: Record<number, any[]> = {};
+        if (data.results) {
+          data.results.forEach((r: any) => {
+            if (r.highlights && r.highlights.length > 0) {
+              loadedHighlights[r.questionNum] = r.highlights;
+            }
+          });
+        }
+        setHighlights(loadedHighlights);
+        
       } catch (err) {
         toast.error('Không tìm thấy kết quả');
       } finally {
@@ -37,6 +54,131 @@ export default function Results() {
     };
     fetchResult();
   }, [id]);
+
+  const handleTextSelection = (e: React.MouseEvent, questionNum: number) => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) {
+      if (selectionBox && !e.nativeEvent.composedPath().some((el: any) => el.id === 'highlight-popup')) {
+        setSelectionBox(null);
+      }
+      return;
+    }
+    
+    const text = selection.toString().trim();
+    if (!text) return;
+    
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    
+    setSelectionBox({
+      show: true,
+      x: rect.left + rect.width / 2,
+      y: rect.top - 10,
+      text,
+      questionNum
+    });
+  };
+
+  const handleAddHighlight = () => {
+    if (!selectionBox) return;
+    
+    const { questionNum, text } = selectionBox;
+    const newHighlight = {
+      id: `hl-${Date.now()}`,
+      text,
+      note: highlightNote || 'Cần chú ý'
+    };
+    
+    const updatedHighlights = {
+      ...highlights,
+      [questionNum]: [...(highlights[questionNum] || []), newHighlight]
+    };
+    
+    setHighlights(updatedHighlights);
+    
+    // Update submission state
+    const newResults = submission.results.map((r: any) => 
+      r.questionNum === questionNum
+        ? { ...r, highlights: updatedHighlights[questionNum] }
+        : r
+    );
+    
+    setSubmission({
+      ...submission,
+      results: newResults
+    });
+    
+    setSelectionBox(null);
+    setHighlightNote('');
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const handleRemoveHighlight = (questionNum: number, highlightId: string) => {
+    const updatedQuestionHighlights = highlights[questionNum]?.filter(h => h.id !== highlightId) || [];
+    
+    const updatedHighlights = {
+      ...highlights,
+      [questionNum]: updatedQuestionHighlights
+    };
+    
+    setHighlights(updatedHighlights);
+    
+    // Update submission state
+    const newResults = submission.results.map((r: any) => 
+      r.questionNum === questionNum
+        ? { ...r, highlights: updatedQuestionHighlights }
+        : r
+    );
+    
+    setSubmission({
+      ...submission,
+      results: newResults
+    });
+  };
+
+  const renderHighlightedText = (text: string, questionNum: number) => {
+    if (!text) return <span className="text-slate-300 italic">Chưa đọc được</span>;
+    
+    const qHighlights = highlights[questionNum];
+    if (!qHighlights || qHighlights.length === 0) return <MathText text={text} />;
+    
+    // Simple implementation for highlighting text
+    // Note: This is a basic approach and might have issues with overlapping highlights or HTML
+    let elements: React.ReactNode[] = [text];
+    
+    qHighlights.forEach((hl) => {
+      elements = elements.flatMap((el, i) => {
+        if (typeof el !== 'string') return [el];
+        
+        const parts = el.split(hl.text);
+        if (parts.length === 1) return [el];
+        
+        const newElements: React.ReactNode[] = [];
+        parts.forEach((part, index) => {
+          newElements.push(part);
+          if (index < parts.length - 1) {
+            newElements.push(
+              <span 
+                key={`${hl.id}-${i}-${index}`}
+                className="bg-yellow-200 cursor-pointer group relative px-0.5 rounded"
+                onClick={() => handleRemoveHighlight(questionNum, hl.id)}
+              >
+                {hl.text}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max max-w-[200px] p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl z-50">
+                  <p className="font-bold mb-1 border-b border-slate-700 pb-1">Ghi chú</p>
+                  <p className="whitespace-pre-wrap">{hl.note}</p>
+                  <p className="text-[8px] text-slate-400 mt-2 text-center">(Click để xóa)</p>
+                </div>
+              </span>
+            );
+          }
+        });
+        return newElements;
+      });
+    });
+    
+    return <>{elements}</>;
+  };
 
   const handleScoreChange = (questionNum: number, newScore: string) => {
     const newResults = submission.results.map((r: any) => 
@@ -330,8 +472,11 @@ export default function Results() {
                     <TableRow key={res.questionNum} className="group border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
                       <TableCell className="px-6 py-4 font-bold text-slate-400 font-mono text-xs">#{res.questionNum}</TableCell>
                       <TableCell className="px-6 py-4 font-bold text-slate-700 align-top">
-                        <div className="max-w-[260px] max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs leading-relaxed">
-                          {res.studentAnswer ? <MathText text={res.studentAnswer} /> : <span className="text-slate-300 italic">Chưa đọc được</span>}
+                        <div 
+                          className="max-w-[260px] max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 border border-slate-100 p-3 text-xs leading-relaxed"
+                          onMouseUp={(e) => handleTextSelection(e, res.questionNum)}
+                        >
+                          {renderHighlightedText(res.studentAnswer, res.questionNum)}
                         </div>
                       </TableCell>
                       <TableCell className="px-6 py-4">
@@ -419,21 +564,41 @@ export default function Results() {
           </Card>
 
           <AnimatePresence>
-            {overallFeedback && (
+            {overallFeedback !== null && overallFeedback !== undefined && overallFeedback !== '' && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
               >
                 <Card className="border-amber-100 bg-amber-50/30 shadow-sm overflow-hidden">
-                   <CardHeader className="py-3 px-6 bg-amber-100/50 border-b border-amber-100 flex flex-row items-center gap-2">
-                     <Sparkles className="w-4 h-4 text-amber-600" />
-                     <CardTitle className="text-xs font-black uppercase tracking-widest text-amber-800">Nhận xét tổng quan từ AI</CardTitle>
+                   <CardHeader className="py-3 px-6 bg-amber-100/50 border-b border-amber-100 flex flex-row items-center justify-between">
+                     <div className="flex items-center gap-2">
+                       <Sparkles className="w-4 h-4 text-amber-600" />
+                       <CardTitle className="text-xs font-black uppercase tracking-widest text-amber-800">Nhận xét tổng quan từ AI</CardTitle>
+                       {overallFeedback !== submission.overallFeedback && (
+                         <Badge variant="outline" className="ml-2 text-[9px] border-amber-300 text-amber-600 bg-amber-100/50">Đã chỉnh sửa</Badge>
+                       )}
+                     </div>
+                     <Button
+                       size="sm"
+                       variant="ghost"
+                       onClick={handleSave}
+                       disabled={isSaving || overallFeedback === submission.overallFeedback}
+                       className="h-7 text-[10px] font-bold text-amber-700 hover:bg-amber-200"
+                     >
+                       {isSaving ? "Đang lưu..." : "Lưu nhận xét"}
+                     </Button>
                    </CardHeader>
-                   <CardContent className="p-6">
-                      <p className="text-sm text-amber-900 leading-relaxed font-medium italic max-h-56 overflow-y-auto whitespace-pre-wrap pr-2">
-                        <MathText text={overallFeedback} />
-                      </p>
+                   <CardContent className="p-0">
+                      <textarea
+                        className="w-full h-40 p-6 text-sm text-amber-900 leading-relaxed font-medium bg-transparent border-none outline-none resize-none placeholder:text-amber-300"
+                        value={overallFeedback}
+                        onChange={(e) => {
+                          setOverallFeedback(e.target.value);
+                          setSubmission({ ...submission, overallFeedback: e.target.value });
+                        }}
+                        placeholder="Nhập nhận xét tổng quan..."
+                      />
                    </CardContent>
                 </Card>
               </motion.div>
@@ -441,6 +606,57 @@ export default function Results() {
           </AnimatePresence>
         </div>
       </div>
+      
+      {/* Highlight Popup Menu */}
+      {selectionBox && selectionBox.show && (
+        <div 
+          id="highlight-popup"
+          className="fixed z-50 bg-white rounded-xl shadow-2xl border border-slate-200 p-3 w-64 animate-in fade-in zoom-in duration-200"
+          style={{ 
+            left: selectionBox.x, 
+            top: selectionBox.y,
+            transform: 'translate(-50%, -100%)'
+          }}
+        >
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-1 mb-1">
+              Thêm highlight
+            </p>
+            <div className="bg-yellow-100 px-2 py-1.5 rounded border border-yellow-200 text-xs italic line-clamp-2 text-yellow-900 mb-1">
+              "{selectionBox.text}"
+            </div>
+            <Input 
+              autoFocus
+              placeholder="Ghi chú (VD: Lỗi sai cơ bản)..." 
+              className="h-8 text-xs bg-slate-50 border-slate-200 focus:bg-white"
+              value={highlightNote}
+              onChange={e => setHighlightNote(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleAddHighlight();
+                if (e.key === 'Escape') setSelectionBox(null);
+              }}
+            />
+            <div className="flex justify-end gap-1.5 mt-1">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-7 text-[10px] font-bold text-slate-500 hover:text-slate-700"
+                onClick={() => setSelectionBox(null)}
+              >
+                Hủy
+              </Button>
+              <Button 
+                size="sm" 
+                className="h-7 text-[10px] font-bold bg-amber-500 hover:bg-amber-600 text-white"
+                onClick={handleAddHighlight}
+              >
+                Highlight
+              </Button>
+            </div>
+          </div>
+          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-b border-r border-slate-200 rotate-45" />
+        </div>
+      )}
     </div>
   );
 }

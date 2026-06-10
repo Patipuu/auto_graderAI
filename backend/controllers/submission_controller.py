@@ -49,3 +49,9 @@ def delete_submission(submission_id):
     if error:
         return jsonify({'success': False, 'message': error}), 404
     return jsonify({'success': True}), 200
+
+@submission_bp.route('/api/submissions/stats/error-rate', methods=['GET'])
+def get_error_rate_stats():
+    """Get statistics on most frequently missed questions"""
+    stats = SubmissionService.get_error_rate_stats()
+    return jsonify(stats), 200
