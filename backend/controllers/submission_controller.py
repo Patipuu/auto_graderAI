@@ -23,6 +23,29 @@ def create_submission():
         
     return jsonify(new_submission), 201
 
+@submission_bp.route('/api/submissions/queue', methods=['GET'])
+def get_approve_queue():
+    """Get queue of unsure essay grading for manual approval"""
+    queue = SubmissionService.get_approve_queue()
+    return jsonify(queue), 200
+
+@submission_bp.route('/api/submissions/queue/approve', methods=['POST'])
+def approve_queue_item():
+    """Persist teacher approval for a queued essay question"""
+    data = request.json or {}
+    submission_id = data.get('submissionId')
+    question_num = data.get('questionNum')
+    score = data.get('score')
+
+    if not submission_id or question_num is None or score is None:
+        return jsonify({'success': False, 'message': 'Missing submissionId, questionNum, or score'}), 400
+
+    updated, error = SubmissionService.approve_queue_item(submission_id, question_num, score)
+    if error:
+        return jsonify({'success': False, 'message': error}), 404
+
+    return jsonify({'success': True, 'submission': updated}), 200
+
 @submission_bp.route('/api/submissions/<submission_id>', methods=['GET'])
 def get_submission(submission_id):
     """Get single submission"""
@@ -55,12 +78,6 @@ def get_error_rate_stats():
     """Get statistics on most frequently missed questions"""
     stats = SubmissionService.get_error_rate_stats()
     return jsonify(stats), 200
-
-@submission_bp.route('/api/submissions/queue', methods=['GET'])
-def get_approve_queue():
-    """Get queue of unsure essay grading for manual approval"""
-    queue = SubmissionService.get_approve_queue()
-    return jsonify(queue), 200
 
 @submission_bp.route('/api/submissions/apply-rule', methods=['POST'])
 def apply_grading_rule():

@@ -30,33 +30,79 @@ export default function ApproveQueue() {
     }
   };
 
+  const persistApproval = async (item: any) => {
+    const approveRes = await fetch('/api/submissions/queue/approve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        submissionId: item.submissionId,
+        questionNum: item.questionNum,
+        score: item.suggestedScore,
+      }),
+    });
+
+    if (approveRes.ok) {
+      const data = await approveRes.json().catch(() => ({}));
+      if (data.success) return;
+      throw new Error(data.message || 'Không lưu được kết quả duyệt');
+    }
+
+    // Fallback khi backend chưa có endpoint /queue/approve (404)
+    if (approveRes.status !== 404) {
+      const data = await approveRes.json().catch(() => ({}));
+      throw new Error(data.message || 'Không lưu được kết quả duyệt');
+    }
+
+    const getRes = await fetch(`/api/submissions/${item.submissionId}`);
+    if (!getRes.ok) throw new Error('Không tìm thấy bài làm');
+    const submission = await getRes.json();
+
+    let matched = false;
+    const newResults = submission.results.map((r: any) => {
+      if (String(r.questionNum) !== String(item.questionNum)) return r;
+      matched = true;
+      const approvedScore = Number(item.suggestedScore);
+      const maxScore = Number(r.maxScore || 1);
+      return {
+        ...r,
+        score: approvedScore,
+        teacherApproved: true,
+        teacherApprovedAt: new Date().toISOString(),
+        isCorrect: approvedScore >= maxScore,
+      };
+    });
+
+    if (!matched) throw new Error(`Không tìm thấy câu ${item.questionNum} trong bài làm`);
+
+    const newTotal = newResults.reduce((acc: number, curr: any) => acc + Number(curr.score || 0), 0);
+    const putRes = await fetch(`/api/submissions/${item.submissionId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: newResults, totalScore: newTotal }),
+    });
+
+    if (!putRes.ok) {
+      const data = await putRes.json().catch(() => ({}));
+      throw new Error(data.message || 'Không lưu được kết quả duyệt');
+    }
+  };
+
   const handleApprove = async (item: any) => {
     try {
-      // First, get the full submission
-      const res = await fetch(`/api/submissions/${item.submissionId}`);
-      if (!res.ok) throw new Error('Submission not found');
-      const submission = await res.json();
-
-      // Find and update the result
-      const newResults = submission.results.map((r: any) =>
-        r.questionNum === item.questionNum
-          ? { ...r, score: item.suggestedScore }
-          : r
-      );
-
-      // Recalculate
-      const newTotal = newResults.reduce((acc: number, curr: any) => acc + curr.score, 0);
-
-      await fetch(`/api/submissions/${item.submissionId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ results: newResults, totalScore: newTotal })
-      });
+      await persistApproval(item);
 
       toast.success(`Đã duyệt điểm cho câu ${item.questionNum} của học sinh ${item.studentName} lớp ${item.studentClass}`);
-      setQueue(queue.filter(q => !(q.submissionId === item.submissionId && q.questionNum === item.questionNum)));
-    } catch (err) {
-      toast.error('Lỗi khi duyệt điểm');
+      setQueue((prev) =>
+        prev.filter(
+          (q) =>
+            !(
+              q.submissionId === item.submissionId &&
+              String(q.questionNum) === String(item.questionNum)
+            )
+        )
+      );
+    } catch (err: any) {
+      toast.error(err?.message || 'Lỗi khi duyệt điểm');
     }
   };
 

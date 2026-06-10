@@ -10,6 +10,22 @@ def calculate_submission_stats(results):
     total_score = sum(float(r.get('score', 0) or 0) for r in (results or []))
     return total_questions, correct_answers, total_score
 
+def is_teacher_approved(result):
+    return result.get('teacherApproved') in (True, 'true', 1, '1')
+
+def is_essay_answer_key(ans_key):
+    key = str(ans_key or '').strip()
+    return len(key) > 1 and key.upper() not in ('A', 'B', 'C', 'D')
+
+def result_needs_manual_review(result, submission):
+    if is_teacher_approved(result):
+        return False
+    score = float(result.get('score', 0) or 0)
+    max_score = float(result.get('maxScore', 1) or 1)
+    partial_score = 0 < score < max_score
+    low_confidence = float(submission.get('confidence', 1) or 1) < 0.85
+    return partial_score or low_confidence
+
 class SubmissionService:
     @staticmethod
     def get_submissions(student='', exam_title=''):
@@ -180,6 +196,20 @@ class SubmissionService:
         return stats_list
 
     @staticmethod
+    def _submission_still_needs_review(submission, exam_dict):
+        exam_id = str(submission.get('examId'))
+        exam = exam_dict.get(exam_id)
+        if not exam:
+            return False
+
+        for res in submission.get('results', []):
+            q_num = res.get('questionNum')
+            ans_key = exam.get('answerKey', {}).get(str(q_num), '')
+            if is_essay_answer_key(ans_key) and result_needs_manual_review(res, submission):
+                return True
+        return False
+
+    @staticmethod
     def get_approve_queue():
         from data_access.exam_repository import ExamRepository
         submissions = SubmissionRepository.get_all()
@@ -190,29 +220,78 @@ class SubmissionService:
         for sub in submissions:
             exam_id = str(sub.get('examId'))
             exam = exam_dict.get(exam_id)
-            if not exam: continue
+            if not exam:
+                continue
             
             for res in sub.get('results', []):
                 q_num = res.get('questionNum')
                 ans_key = exam.get('answerKey', {}).get(str(q_num), '')
-                # Is essay?
-                if len(str(ans_key)) > 1 and str(ans_key) not in ['A', 'B', 'C', 'D']:
-                    # Unsure if score is between 0 and maxScore, or confidence is low
-                    if 0 < float(res.get('score', 0)) < float(res.get('maxScore', 1)) or sub.get('confidence', 1) < 0.85:
-                        queue_item = {
-                            'submissionId': sub['id'],
-                            'studentName': sub.get('studentName', 'Unknown'),
-                            'studentClass': sub.get('studentClass', 'Unknown'),
-                            'examTitle': sub.get('examTitle', ''),
-                            'questionNum': q_num,
-                            'studentAnswer': res.get('studentAnswer', ''),
-                            'suggestedScore': res.get('score', 0),
-                            'maxScore': res.get('maxScore', 1),
-                            'feedback': res.get('feedback', ''),
-                            'referenceAnswer': str(ans_key)
-                        }
-                        queue.append(queue_item)
+                if not is_essay_answer_key(ans_key):
+                    continue
+                if not result_needs_manual_review(res, sub):
+                    continue
+
+                queue.append({
+                    'submissionId': sub['id'],
+                    'studentName': sub.get('studentName', 'Unknown'),
+                    'studentClass': sub.get('studentClass', ''),
+                    'examTitle': sub.get('examTitle', ''),
+                    'questionNum': q_num,
+                    'studentAnswer': res.get('studentAnswer', ''),
+                    'suggestedScore': res.get('score', 0),
+                    'maxScore': res.get('maxScore', 1),
+                    'feedback': res.get('feedback', ''),
+                    'referenceAnswer': str(ans_key)
+                })
         return queue
+
+    @staticmethod
+    def approve_queue_item(submission_id, question_num, score):
+        from data_access.exam_repository import ExamRepository
+
+        sub = SubmissionRepository.get_by_id(submission_id)
+        if not sub:
+            return None, 'Submission not found'
+
+        target_q = str(question_num)
+        updated_results = []
+        matched = False
+
+        for res in sub.get('results', []):
+            if str(res.get('questionNum')) == target_q:
+                matched = True
+                approved_score = float(score)
+                max_score = float(res.get('maxScore', 1) or 1)
+                updated_results.append({
+                    **res,
+                    'score': approved_score,
+                    'teacherApproved': True,
+                    'teacherApprovedAt': now_iso(),
+                    'isCorrect': approved_score >= max_score,
+                })
+            else:
+                updated_results.append(res)
+
+        if not matched:
+            return None, f'Question {question_num} not found in submission'
+
+        total_questions, correct_answers, total_score = calculate_submission_stats(updated_results)
+        exams = ExamRepository.get_all()
+        exam_dict = {str(e['id']): e for e in exams}
+        pending_submission = {**sub, 'results': updated_results}
+
+        update_payload = {
+            'results': updated_results,
+            'totalQuestions': total_questions,
+            'correctAnswers': correct_answers,
+            'totalScore': total_score,
+            'maxScore': sum(float(r.get('maxScore', 1) or 1) for r in updated_results),
+            'requiresManualReview': SubmissionService._submission_still_needs_review(pending_submission, exam_dict),
+            'finalizedAt': now_iso(),
+        }
+
+        updated = SubmissionRepository.update(submission_id, update_payload)
+        return updated, None
 
     @staticmethod
     def apply_grading_rule(exam_id, question_num, student_answer, new_score, feedback=None):
