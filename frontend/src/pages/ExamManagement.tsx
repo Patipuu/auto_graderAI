@@ -590,6 +590,10 @@ export default function ExamManagement() {
                   const currentPoint = examForKey.questionPoints?.[qNum] ?? 1;
                   const currentRubricGroups = getRubricGroups(examForKey, qNum);
                   const currentRubricTotal = rubricTotal(currentRubricGroups);
+                  // Get linked bank question if available
+                  const linkedQuestion = examForKey.questionIds?.[i] 
+                    ? bankQuestions.find(q => q.id === examForKey.questionIds![i]) 
+                    : null;
                   
                   return (
                     <Card key={qNum} className={cn(
@@ -610,6 +614,14 @@ export default function ExamManagement() {
                            Chuyển sang {isEssay ? 'Trắc nghiệm' : 'Tự luận'}
                          </button>
                       </div>
+
+                      {/* Display question content from bank if available */}
+                      {linkedQuestion && (
+                        <div className="mb-4 p-4 rounded-xl border border-slate-100 bg-slate-50/50">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Nội dung câu hỏi</p>
+                          <p className="text-sm font-semibold text-slate-800 leading-relaxed"><MathText text={linkedQuestion.content} /></p>
+                        </div>
+                      )}
 
                       <div className="mb-4 flex items-center justify-between rounded-xl border border-slate-100 bg-white p-3">
                         <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Điểm câu</span>
@@ -769,6 +781,30 @@ export default function ExamManagement() {
                         </div>
                         </>
                       ) : (
+                        <>
+                        {/* Display answer options from bank for multiple choice */}
+                        {linkedQuestion?.options && (
+                          <div className="mb-4 space-y-2">
+                            {linkedQuestion.options.map((opt: string, optIdx: number) => {
+                              const label = String.fromCharCode(65 + optIdx);
+                              const isSelected = examForKey.answerKey[qNum] === label;
+                              return (
+                                <div key={label} className={cn(
+                                  "flex items-center gap-3 p-3 rounded-xl border text-sm transition-all",
+                                  isSelected ? "bg-blue-50 border-blue-200 text-blue-700 font-bold" : "bg-slate-50/50 border-slate-100 text-slate-600"
+                                )}>
+                                  <div className={cn(
+                                    "w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0",
+                                    isSelected ? "bg-blue-600 text-white" : "bg-white text-slate-400 border"
+                                  )}>
+                                    {label}
+                                  </div>
+                                  <span className="flex-1"><MathText text={opt} /></span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                         <div className="flex gap-2">
                           {['A', 'B', 'C', 'D'].map(choice => (
                             <button
@@ -789,6 +825,7 @@ export default function ExamManagement() {
                             </button>
                           ))}
                         </div>
+                        </>
                       )}
                     </Card>
                   );
