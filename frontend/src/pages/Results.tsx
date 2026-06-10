@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { CheckCircle2, XCircle, AlertCircle, ArrowLeft, Download, User, BookOpen, Save, ShieldCheck, Sparkles, RefreshCcw } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertCircle, ArrowLeft, Download, User, BookOpen, Save, ShieldCheck, Sparkles, RefreshCcw, Eye } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import { aiGradingService } from '@/services/aiGradingService';
 import MathText from '@/components/MathText';
@@ -25,6 +26,21 @@ export default function Results() {
   const [highlights, setHighlights] = useState<Record<number, Array<{ id: string, text: string, note: string }>>>({});
   const [selectionBox, setSelectionBox] = useState<{ show: boolean, x: number, y: number, text: string, questionNum: number } | null>(null);
   const [highlightNote, setHighlightNote] = useState('');
+  const [questionModal, setQuestionModal] = useState<{
+    questionNum: number;
+    questionContent?: string;
+    referenceAnswer?: string;
+  } | null>(null);
+  const [answerModal, setAnswerModal] = useState<{
+    questionNum: number;
+    studentAnswer?: string;
+  } | null>(null);
+
+  const UNAVAILABLE_QUESTION = 'Nội dung câu hỏi không khả dụng';
+  const COMPACT_CELL_CLASS =
+    'max-h-24 overflow-y-auto overflow-x-hidden text-[10px] leading-snug text-slate-500 bg-slate-50 rounded-md border border-slate-100 p-2 break-words [&_.katex]:!text-[10px] [&_.katex]:!leading-snug [&_.katex-display]:!text-[10px] [&_.katex-display]:!my-1 [&_.katex-display]:overflow-x-hidden';
+  const COMPACT_ANSWER_CELL_CLASS =
+    'max-h-28 overflow-y-auto overflow-x-hidden text-[10px] leading-relaxed text-slate-600 bg-slate-50 rounded-md border border-slate-100 p-2 break-words [&_.katex]:!text-[10px] [&_.katex]:!leading-relaxed [&_.katex-display]:!text-[10px] [&_.katex-display]:!my-1.5 [&_.katex-display]:overflow-x-hidden';
 
   useEffect(() => {
     const fetchResult = async () => {
@@ -136,11 +152,11 @@ export default function Results() {
     });
   };
 
-  const renderHighlightedText = (text: string, questionNum: number) => {
+  const renderHighlightedText = (text: string, questionNum: number, compact = false) => {
     if (!text) return <span className="text-slate-300 italic">Chưa đọc được</span>;
 
     const qHighlights = highlights[questionNum];
-    if (!qHighlights || qHighlights.length === 0) return <MathText text={text} />;
+    if (!qHighlights || qHighlights.length === 0) return <MathText text={text} compact={compact} />;
 
     // Simple implementation for highlighting text
     // Note: This is a basic approach and might have issues with overlapping highlights or HTML
@@ -177,8 +193,139 @@ export default function Results() {
       });
     });
 
-    return <>{elements}</>;
+    return <span className="whitespace-pre-wrap leading-relaxed break-words">{elements}</span>;
   };
+
+  const isEssayQuestion = (res: any) => {
+    const ref = (res.referenceAnswer || '').trim().toUpperCase();
+    const ans = (res.studentAnswer || '').trim();
+    const isSingleMcqPick = ans.length <= 2 && /^[A-Da-d]$/.test(ans);
+    if (ref && ['A', 'B', 'C', 'D'].includes(ref) && isSingleMcqPick) return false;
+    if (ref && ['A', 'B', 'C', 'D'].includes(ref) && ans.length > 3) return true;
+    if (ref && ref.length > 1 && !['A', 'B', 'C', 'D'].includes(ref)) return true;
+    return ans.length > 15;
+  };
+
+  const getQuestionContent = (res: any) => {
+    const content = res.questionContent?.trim();
+    if (content && content !== UNAVAILABLE_QUESTION) return content;
+    return null;
+  };
+
+  const renderEmphasizedFeedback = (feedback?: string) => {
+    if (!feedback) return <span className="text-slate-300 italic">—</span>;
+
+    const splitRegex = /(Lý do:|thiếu|chưa đủ|chưa đạt|không đạt|sai|lỗi|chưa đúng|chưa chính xác|cần chú ý|trừ điểm|cần cải thiện|đúng|chính xác|đạt đủ|hoàn chỉnh|xuất sắc)/gi;
+    const negativeKw = /^(thiếu|chưa đủ|chưa đạt|không đạt|sai|lỗi|chưa đúng|chưa chính xác|cần chú ý|trừ điểm|cần cải thiện)$/i;
+    const positiveKw = /^(đúng|chính xác|đạt đủ|hoàn chỉnh|xuất sắc)$/i;
+    const parts = feedback.split(splitRegex).filter(Boolean);
+
+    return (
+      <div className="text-xs text-slate-600 leading-relaxed max-h-28 overflow-y-auto break-words whitespace-pre-wrap">
+        {parts.map((part, i) => {
+          if (part === 'Lý do:') {
+            return <strong key={i} className="text-slate-900 font-bold">{part} </strong>;
+          }
+          if (negativeKw.test(part)) {
+            return <strong key={i} className="text-red-700 font-bold">{part}</strong>;
+          }
+          if (positiveKw.test(part)) {
+            return <strong key={i} className="text-green-700 font-bold">{part}</strong>;
+          }
+          return <span key={i}>{part}</span>;
+        })}
+      </div>
+    );
+  };
+
+  const renderQuestionAnswerCell = (res: any) => {
+    const qContent = getQuestionContent(res);
+    return (
+      <div className={`${COMPACT_CELL_CLASS} space-y-1.5`}>
+        {qContent ? (
+          <MathText text={qContent} compact />
+        ) : (
+          <span className="text-slate-400 italic">Chưa có nội dung</span>
+        )}
+        {res.referenceAnswer && (
+          <div className="pt-1.5 border-t border-slate-200">
+            <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wide block mb-0.5">Đáp án</span>
+            <div className="text-blue-700 font-medium">
+              <MathText text={res.referenceAnswer} compact />
+            </div>
+          </div>
+        )}
+        {(qContent || res.referenceAnswer) && (
+          <button
+            type="button"
+            onClick={() => setQuestionModal({
+              questionNum: res.questionNum,
+              questionContent: res.questionContent,
+              referenceAnswer: res.referenceAnswer,
+            })}
+            className="text-[9px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
+          >
+            <Eye className="w-3 h-3" /> Xem đầy đủ
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderStudentAnswerCell = (res: any) => {
+    const essay = isEssayQuestion(res);
+    if (!essay) {
+      return (
+        <div
+          className="text-sm font-bold text-slate-800 bg-white border border-slate-200 rounded-md px-2 py-1 text-center"
+          onMouseUp={(e) => handleTextSelection(e, res.questionNum)}
+        >
+          {renderHighlightedText(res.studentAnswer, res.questionNum, false)}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-1.5">
+        <div
+          className={COMPACT_ANSWER_CELL_CLASS}
+          onMouseUp={(e) => handleTextSelection(e, res.questionNum)}
+        >
+          {renderHighlightedText(res.studentAnswer, res.questionNum, true)}
+        </div>
+        {res.studentAnswer?.trim() && (
+          <button
+            type="button"
+            onClick={() => setAnswerModal({
+              questionNum: res.questionNum,
+              studentAnswer: res.studentAnswer,
+            })}
+            className="text-[9px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
+          >
+            <Eye className="w-3 h-3" /> Xem đầy đủ
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  const renderAIRegradeButton = (questionNum: number) => (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-8 w-full min-w-[104px] text-[10px] font-bold text-blue-700 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:text-blue-800 gap-1 shadow-sm"
+      onClick={() => handleAIReevaluate(questionNum)}
+      disabled={isEvaluating.includes(questionNum)}
+      title="Yêu cầu AI chấm lại câu này"
+    >
+      {isEvaluating.includes(questionNum) ? (
+        <RefreshCcw className="w-3 h-3 animate-spin shrink-0" />
+      ) : (
+        <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+      )}
+      AI Chấm lại
+    </Button>
+  );
 
   const handleScoreChange = (questionNum: number, newScore: string) => {
     const newResults = submission.results.map((r: any) =>
@@ -473,132 +620,160 @@ export default function Results() {
         </div>
 
         {/* Detailed Results Table */}
-        <div className="lg:col-span-3 space-y-6">
-          <Card className="card-polish">
-            <CardHeader className="border-b border-slate-50 py-4 px-6 flex flex-row items-center justify-between bg-slate-50/30">
-              <CardTitle className="text-base font-bold">Phân tích chi tiết câu trả lời</CardTitle>
-              <div className="flex gap-2">
-                <Badge variant="outline" className="bg-white text-[10px] font-bold border-slate-200">
-                  {submission.results?.length || 0} CÂU HỎI
-                </Badge>
-              </div>
+        <div className="lg:col-span-3 space-y-6 min-w-0">
+          <Card className="card-polish overflow-hidden">
+            <CardHeader className="border-b border-slate-100 py-3 px-4 sm:px-5 flex flex-row items-center justify-between bg-slate-50/50">
+              <CardTitle className="text-sm sm:text-base font-bold">Phân tích chi tiết câu trả lời</CardTitle>
+              <Badge variant="outline" className="bg-white text-[10px] font-bold border-slate-200 shrink-0">
+                {submission.results?.length || 0} câu
+              </Badge>
             </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader className="table-header-polish">
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="px-6 py-4 w-16">TT</TableHead>
-                    <TableHead className="px-6 py-4 w-[220px] xl:w-[260px]">Câu hỏi & Đáp án</TableHead>
-                    <TableHead className="px-6 py-4 w-[200px] xl:w-[240px]">Học sinh trả lời</TableHead>
-                    <TableHead className="px-6 py-4 w-28 text-center">Trạng thái AI</TableHead>
-                    <TableHead className="px-6 py-4 w-28 text-center">Thang điểm</TableHead>
-                    <TableHead className="px-6 py-4">Nhận xét chi tiết</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {submission.results?.map((res: any) => (
-                    <TableRow key={res.questionNum} className="group border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
-                      <TableCell className="px-6 py-4 font-bold text-slate-400 font-mono text-xs">#{res.questionNum}</TableCell>
-                      <TableCell className="px-6 py-4 align-top">
-                        <div className="w-[200px] xl:w-[240px] max-h-48 overflow-y-auto whitespace-pre-wrap text-[11px] text-slate-600 font-medium rounded-lg bg-slate-50 p-2 border border-slate-100">
-                          <MathText text={res.questionContent || 'Nội dung câu hỏi không khả dụng'} />
-                          {res.referenceAnswer && (
-                            <div className="mt-2 pt-2 border-t border-slate-200">
-                              <span className="text-[9px] font-bold text-blue-500 uppercase tracking-widest block mb-0.5">Đáp án / Rubric:</span>
-                              <div className="text-blue-700 font-medium line-clamp-3">
-                                <MathText text={res.referenceAnswer} />
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-6 py-4 font-bold text-slate-700 align-top">
-                        <div
-                          className="w-[200px] xl:w-[240px] max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-white border border-slate-200 p-2 text-[11px] leading-relaxed shadow-sm"
-                          onMouseUp={(e) => handleTextSelection(e, res.questionNum)}
-                        >
-                          {renderHighlightedText(res.studentAnswer, res.questionNum)}
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-6 py-4">
-                        <div className="flex flex-col gap-1.5">
-                          {res.isCorrect ? (
-                            <div className="flex items-center gap-1.5 text-green-600">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span className="text-[10px] font-bold uppercase tracking-wider">Chính xác</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5 text-red-500">
-                              <XCircle className="w-3.5 h-3.5" />
-                              <span className="text-[10px] font-bold uppercase tracking-wider">Sai lệch</span>
-                            </div>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="xs"
-                            className="h-6 w-fit text-[9px] font-black uppercase text-blue-600 hover:bg-blue-50 border border-blue-100 px-2"
-                            onClick={() => handleAIReevaluate(res.questionNum)}
-                            disabled={isEvaluating.includes(res.questionNum)}
-                          >
-                            {isEvaluating.includes(res.questionNum) ? (
-                              <RefreshCcw className="w-2.5 h-2.5 animate-spin mr-1" />
+            <CardContent className="p-0 overflow-x-hidden">
+              {/* Desktop / laptop table */}
+              <div className="hidden md:block">
+                <Table className="table-fixed w-full">
+                  <colgroup>
+                    <col className="w-10" />
+                    <col className="w-[16%]" />
+                    <col className="w-[18%]" />
+                    <col className="w-[120px]" />
+                    <col className="w-[84px]" />
+                    <col />
+                  </colgroup>
+                  <TableHeader className="table-header-polish bg-slate-50/80">
+                    <TableRow className="hover:bg-transparent border-b border-slate-100">
+                      <TableHead className="px-2 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">#</TableHead>
+                      <TableHead className="px-2 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Câu hỏi & Đáp án</TableHead>
+                      <TableHead className="px-2 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Học sinh trả lời</TableHead>
+                      <TableHead className="px-2 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-center">Trạng thái AI</TableHead>
+                      <TableHead className="px-2 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-center">Điểm</TableHead>
+                      <TableHead className="px-2 py-2.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Nhận xét</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {submission.results?.map((res: any) => (
+                      <TableRow key={res.questionNum} className="group border-b border-slate-50 last:border-0 hover:bg-slate-50/40">
+                        <TableCell className="px-2 py-3 align-top whitespace-normal text-center">
+                          <span className="text-[11px] font-bold text-slate-400 font-mono">#{res.questionNum}</span>
+                        </TableCell>
+                        <TableCell className="px-2 py-3 align-top whitespace-normal">
+                          {renderQuestionAnswerCell(res)}
+                        </TableCell>
+                        <TableCell className="px-2 py-3 align-top whitespace-normal">
+                          {renderStudentAnswerCell(res)}
+                        </TableCell>
+                        <TableCell className="px-2 py-3 align-top whitespace-normal">
+                          <div className="flex flex-col items-stretch gap-2">
+                            {res.isCorrect ? (
+                              <Badge className="justify-center bg-green-50 text-green-700 border-green-200 hover:bg-green-50 text-[10px] font-bold gap-1 py-0.5">
+                                <CheckCircle2 className="w-3 h-3" /> Chính xác
+                              </Badge>
                             ) : (
-                              <Sparkles className="w-2.5 h-2.5 mr-1 text-amber-500" />
+                              <Badge variant="outline" className="justify-center bg-red-50 text-red-600 border-red-200 text-[10px] font-bold gap-1 py-0.5">
+                                <XCircle className="w-3 h-3" /> Sai lệch
+                              </Badge>
                             )}
-                            AI Chấm lại
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-6 py-4">
-                        <div className="flex flex-col gap-1.5 items-center">
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number"
-                              step="0.25"
-                              min="0"
-                              max={res.maxScore || 1}
-                              value={res.score}
-                              onChange={(e) => handleScoreChange(res.questionNum, e.target.value)}
-                              className="w-14 h-8 text-center text-xs font-bold border-slate-200 focus:ring-blue-500 bg-white"
-                            />
-                            <span className="text-[10px] font-bold text-slate-400">/ {Number(res.maxScore || 1).toFixed(2)}</span>
+                            {renderAIRegradeButton(res.questionNum)}
                           </div>
-                          {res.studentAnswer && res.studentAnswer.length > 5 && (
-                            <Button
-                              variant="ghost"
-                              size="xs"
-                              className="h-6 w-full text-[9px] font-bold text-amber-600 hover:bg-amber-50 hover:text-amber-700 bg-amber-50/50 mt-1"
-                              onClick={() => handleApplyGradingRule(res.questionNum)}
-                            >
-                              <Sparkles className="w-2.5 h-2.5 mr-1" /> Áp dụng chung
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-6 py-4 align-top">
-                        <div className="text-[11px] text-slate-600 leading-relaxed w-full min-w-[250px] max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-white border border-slate-100 p-3 relative">
-                          <MathText text={res.feedback} />
-                          {res.feedback && res.feedback.includes('Lý do:') && (
-                            <Badge variant="outline" className="absolute top-2 right-2 text-[8px] bg-blue-50 text-blue-600 border-blue-200 uppercase">
-                              Log Lý Do
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {!submission.results && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-20 bg-white">
-                        <div className="flex flex-col items-center gap-2">
-                          <AlertCircle className="w-8 h-8 text-slate-100" />
+                        </TableCell>
+                        <TableCell className="px-2 py-3 align-top whitespace-normal">
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-0.5">
+                              <Input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                max={res.maxScore || 1}
+                                value={res.score}
+                                onChange={(e) => handleScoreChange(res.questionNum, e.target.value)}
+                                className="w-12 h-7 text-center text-xs font-bold border-slate-200 bg-white px-1"
+                              />
+                              <span className="text-[10px] text-slate-400">/{Number(res.maxScore || 1).toFixed(1)}</span>
+                            </div>
+                            {res.studentAnswer && res.studentAnswer.length > 5 && (
+                              <Button
+                                variant="ghost"
+                                size="xs"
+                                className="h-5 text-[8px] font-bold text-amber-600 hover:bg-amber-50 px-1"
+                                onClick={() => handleApplyGradingRule(res.questionNum)}
+                              >
+                                <Sparkles className="w-2 h-2 mr-0.5" /> Chung
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="px-2 py-3 align-top whitespace-normal">
+                          {renderEmphasizedFeedback(res.feedback)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {!submission.results && (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-16 whitespace-normal">
+                          <AlertCircle className="w-8 h-8 text-slate-200 mx-auto mb-2" />
                           <p className="text-sm text-slate-400">Không có dữ liệu chi tiết cho bài thi này.</p>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Tablet / mobile card list */}
+              <div className="md:hidden divide-y divide-slate-100">
+                {submission.results?.map((res: any) => (
+                  <div key={res.questionNum} className="p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold font-mono text-slate-400">#{res.questionNum}</span>
+                      <div className="flex items-center gap-2">
+                        {res.isCorrect ? (
+                          <Badge className="bg-green-50 text-green-700 border-green-200 text-[10px]">Chính xác</Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-red-50 text-red-600 border-red-200 text-[10px]">Sai lệch</Badge>
+                        )}
+                        <div className="flex items-center gap-0.5">
+                          <Input
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            max={res.maxScore || 1}
+                            value={res.score}
+                            onChange={(e) => handleScoreChange(res.questionNum, e.target.value)}
+                            className="w-12 h-7 text-center text-xs font-bold"
+                          />
+                          <span className="text-[10px] text-slate-400">/{Number(res.maxScore || 1).toFixed(1)}</span>
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Câu hỏi & Đáp án</p>
+                      {renderQuestionAnswerCell(res)}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Trả lời {isEssayQuestion(res) ? '(tự luận)' : ''}
+                      </p>
+                      {renderStudentAnswerCell(res)}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Trạng thái AI</p>
+                      {renderAIRegradeButton(res.questionNum)}
+                    </div>
+                    {res.feedback && (
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nhận xét</p>
+                        {renderEmphasizedFeedback(res.feedback)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {!submission.results && (
+                  <div className="py-16 text-center">
+                    <AlertCircle className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                    <p className="text-sm text-slate-400">Không có dữ liệu chi tiết cho bài thi này.</p>
+                  </div>
+                )}
+              </div>
             </CardContent>
             <footer className="px-6 py-4 bg-slate-50/30 border-t border-slate-100 flex items-center justify-between">
               <span className="italic text-[10px] text-slate-400">
@@ -664,6 +839,59 @@ export default function Results() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Student answer detail modal */}
+      <Dialog open={!!answerModal} onOpenChange={(open) => !open && setAnswerModal(null)}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">
+              Câu {answerModal?.questionNum} — Đáp án học sinh
+            </DialogTitle>
+          </DialogHeader>
+          {answerModal && (
+            <div
+              className="rounded-lg bg-slate-50 border border-slate-100 p-4 text-sm text-slate-700 leading-relaxed max-h-[65vh] overflow-y-auto"
+              onMouseUp={(e) => handleTextSelection(e, answerModal.questionNum)}
+            >
+              {renderHighlightedText(answerModal.studentAnswer || '', answerModal.questionNum, false)}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Question detail modal */}
+      <Dialog open={!!questionModal} onOpenChange={(open) => !open && setQuestionModal(null)}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">
+              Câu {questionModal?.questionNum} — Nội dung & đáp án mẫu
+            </DialogTitle>
+          </DialogHeader>
+          {questionModal && (
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nội dung câu hỏi</p>
+                <div className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-slate-700 leading-relaxed whitespace-pre-wrap">
+                  <MathText text={
+                    questionModal.questionContent?.trim() &&
+                    questionModal.questionContent.trim() !== UNAVAILABLE_QUESTION
+                      ? questionModal.questionContent
+                      : 'Nội dung câu hỏi chưa được lưu cho bài thi này.'
+                  } />
+                </div>
+              </div>
+              {questionModal.referenceAnswer && (
+                <div>
+                  <p className="text-[10px] font-bold text-blue-500 uppercase tracking-wider mb-1.5">Đáp án / Rubric</p>
+                  <div className="rounded-lg bg-blue-50/50 border border-blue-100 p-3 text-blue-900 leading-relaxed whitespace-pre-wrap">
+                    <MathText text={questionModal.referenceAnswer} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Highlight Popup Menu */}
       {selectionBox && selectionBox.show && (
