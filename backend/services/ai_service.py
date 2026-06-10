@@ -161,7 +161,7 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
     5. Với trắc nghiệm: so sánh đáp án A/B/C/D.
     6. Với tự luận/toán/văn: nếu có Structured rubric item groups thì bắt buộc chấm lần lượt từng item trong từng nhóm trước; nếu không có thì dùng đáp án mẫu như rubric/dàn ý.
     7. Sau khi chấm từng item, tự soát lại một lần nữa: có item nào học sinh đã làm đúng nhưng chưa được cộng điểm không, có item nào bị cộng điểm khi chưa có bằng chứng không.
-    8. Cung cấp nhận xét chỉ rõ ý/bước đúng, ý/bước sai hoặc thiếu.
+    8. Cung cấp nhận xét phải bắt đầu bằng "Lý do: [Nguyên nhân cho điểm/trừ điểm]". Ví dụ: "Lý do: Thiếu từ khóa trọng tâm, chỉ đạt 50% yêu cầu."
     
     Trả về JSON với cấu trúc chính xác sau (KHÔNG có text khác):
     {{
@@ -174,7 +174,7 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
                 "studentAnswer": "A hoặc text tự luận",
                 "isCorrect": true/false,
                 "score": 1.0,
-                "feedback": "Nhận xét ngắn gọn",
+                "feedback": "Lý do: Nhận xét ngắn gọn",
                 "criterionAudit": [
                     {{
                         "groupTitle": "Tên nhóm rubric",
@@ -191,7 +191,7 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
                 "studentAnswer": "B",
                 "isCorrect": false,
                 "score": 0.0,
-                "feedback": "Sai. Đáp án đúng là A"
+                "feedback": "Lý do: Sai. Đáp án đúng là A"
             }}
         ],
         "totalScore": 8.5,
@@ -208,7 +208,7 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
     - Không được bỏ qua tiêu chí rubric chỉ vì học sinh diễn đạt khác; nếu đúng ý thì phải cộng điểm phù hợp.
     - Nếu OCR không chắc một đoạn liên quan đến tiêu chí, đánh status unreadable hoặc partial thay vì tự kết luận sai.
     - Nếu có Structured rubric item groups, feedback phải nhắc rõ nhóm/item nào đạt, đạt một phần hoặc thiếu.
-    - Feedback phải nêu ngắn gọn: đạt ý nào, thiếu/sai ý nào, nên sửa gì.
+    - Feedback phải luôn bắt đầu bằng "Lý do: ".
     - Nếu không thể đọc được gì, hãy đặt confidence thấp
     - totalScore = sum của tất cả scores
     """
@@ -351,13 +351,13 @@ def evaluate_response(
     2. Nếu là tự luận, Văn, Lịch sử, Giáo lý: dùng rubric/dàn ý như tiêu chí chấm. Không yêu cầu học sinh viết giống hệt; chấp nhận cách diễn đạt khác nếu đúng ý.
     3. Nếu là Toán hoặc bài có nhiều bước: chia theo các ý/bước trong rubric. Học sinh đúng bước nào thì được phần điểm bước đó; sai ở bước nào thì không cộng điểm cho các bước sau phụ thuộc trực tiếp vào bước sai.
     4. Điểm là điểm thực tế trên thang tối đa {max_score}. Chỉ dùng bước nhảy 0.25 và không vượt quá {max_score}.
-    5. Feedback cần nêu rõ: phần đúng, phần sai/thiếu, và lý do trừ điểm. Không viết quá chung chung.
+    5. Feedback phải có cấu trúc rõ ràng. Bắt buộc bắt đầu bằng "Lý do: [lý do chính được điểm hoặc trừ điểm]". Ví dụ: "Lý do: Độ tương đồng ngữ nghĩa đạt 80%, thiếu từ khóa X."
     
     Trả về JSON (CHỈ JSON, không text khác):
     {{
         "score": {max_score},
         "isCorrect": true,
-        "feedback": "Đạt đủ các ý chính trong rubric."
+        "feedback": "Lý do: Đạt đủ các ý chính trong rubric. Học sinh trình bày tốt."
     }}
     """
 

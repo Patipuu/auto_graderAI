@@ -22,7 +22,36 @@ class SubmissionService:
 
     @staticmethod
     def get_submission(submission_id):
-        return SubmissionRepository.get_by_id(submission_id)
+        sub = SubmissionRepository.get_by_id(submission_id)
+        if not sub:
+            return None
+            
+        # Try to inject question content
+        from data_access.exam_repository import ExamRepository
+        from data_access.question_repository import QuestionRepository
+        
+        exam_id = sub.get('examId')
+        if exam_id:
+            exam = ExamRepository.get_by_id(exam_id)
+            if exam:
+                question_ids = exam.get('questionIds', [])
+                # Get actual questions
+                all_questions = QuestionRepository.get_all()
+                q_dict = {str(q['id']): q for q in all_questions}
+                
+                # Assume questionIds are ordered [q1, q2, ...]
+                ans_key = exam.get('answerKey', {})
+                for res in sub.get('results', []):
+                    q_num = res.get('questionNum')
+                    if q_num and isinstance(q_num, int) and 1 <= q_num <= len(question_ids):
+                        q_id = question_ids[q_num - 1]
+                        question = q_dict.get(str(q_id))
+                        if question:
+                            res['questionContent'] = question.get('content', '')
+                            
+                    res['referenceAnswer'] = ans_key.get(str(q_num), '')
+                    
+        return sub
 
     @staticmethod
     def create_submission(data):
@@ -149,3 +178,69 @@ class SubmissionService:
         # Sort by error rate descending
         stats_list.sort(key=lambda x: x['errorRate'], reverse=True)
         return stats_list
+
+    @staticmethod
+    def get_approve_queue():
+        from data_access.exam_repository import ExamRepository
+        submissions = SubmissionRepository.get_all()
+        exams = ExamRepository.get_all()
+        exam_dict = {str(e['id']): e for e in exams}
+        
+        queue = []
+        for sub in submissions:
+            exam_id = str(sub.get('examId'))
+            exam = exam_dict.get(exam_id)
+            if not exam: continue
+            
+            for res in sub.get('results', []):
+                q_num = res.get('questionNum')
+                ans_key = exam.get('answerKey', {}).get(str(q_num), '')
+                # Is essay?
+                if len(str(ans_key)) > 1 and str(ans_key) not in ['A', 'B', 'C', 'D']:
+                    # Unsure if score is between 0 and maxScore, or confidence is low
+                    if 0 < float(res.get('score', 0)) < float(res.get('maxScore', 1)) or sub.get('confidence', 1) < 0.85:
+                        queue_item = {
+                            'submissionId': sub['id'],
+                            'studentName': sub.get('studentName', 'Unknown'),
+                            'examTitle': sub.get('examTitle', ''),
+                            'questionNum': q_num,
+                            'studentAnswer': res.get('studentAnswer', ''),
+                            'suggestedScore': res.get('score', 0),
+                            'maxScore': res.get('maxScore', 1),
+                            'feedback': res.get('feedback', ''),
+                            'referenceAnswer': str(ans_key)
+                        }
+                        queue.append(queue_item)
+        return queue
+
+    @staticmethod
+    def apply_grading_rule(exam_id, question_num, student_answer, new_score, feedback=None):
+        submissions = SubmissionRepository.get_all()
+        updated_count = 0
+        
+        for sub in submissions:
+            if str(sub.get('examId')) != str(exam_id): continue
+            
+            needs_update = False
+            for res in sub.get('results', []):
+                if str(res.get('questionNum')) == str(question_num):
+                    # Simple similarity check
+                    if res.get('studentAnswer', '').strip().lower() == student_answer.strip().lower():
+                        res['score'] = float(new_score)
+                        if feedback:
+                            res['feedback'] = feedback
+                        needs_update = True
+                        updated_count += 1
+                        
+            if needs_update:
+                total_questions, correct_answers, total_score = calculate_submission_stats(sub['results'])
+                update_payload = {
+                    'results': sub['results'],
+                    'totalQuestions': total_questions,
+                    'correctAnswers': correct_answers,
+                    'totalScore': total_score,
+                    'finalizedAt': now_iso()
+                }
+                SubmissionRepository.update(sub['id'], update_payload)
+                
+        return updated_count

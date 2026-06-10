@@ -55,3 +55,25 @@ def get_error_rate_stats():
     """Get statistics on most frequently missed questions"""
     stats = SubmissionService.get_error_rate_stats()
     return jsonify(stats), 200
+
+@submission_bp.route('/api/submissions/queue', methods=['GET'])
+def get_approve_queue():
+    """Get queue of unsure essay grading for manual approval"""
+    queue = SubmissionService.get_approve_queue()
+    return jsonify(queue), 200
+
+@submission_bp.route('/api/submissions/apply-rule', methods=['POST'])
+def apply_grading_rule():
+    """Apply a grading rule to similar answers"""
+    data = request.json or {}
+    exam_id = data.get('examId')
+    q_num = data.get('questionNum')
+    student_answer = data.get('studentAnswer')
+    new_score = data.get('newScore')
+    feedback = data.get('feedback')
+    
+    if not all([exam_id, q_num, student_answer, new_score is not None]):
+        return jsonify({'success': False, 'message': 'Missing fields'}), 400
+        
+    count = SubmissionService.apply_grading_rule(exam_id, q_num, student_answer, new_score, feedback)
+    return jsonify({'success': True, 'updatedCount': count}), 200
