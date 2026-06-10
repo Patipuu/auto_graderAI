@@ -202,6 +202,7 @@ class SubmissionService:
                         queue_item = {
                             'submissionId': sub['id'],
                             'studentName': sub.get('studentName', 'Unknown'),
+                            'studentClass': sub.get('studentClass', 'Unknown'),
                             'examTitle': sub.get('examTitle', ''),
                             'questionNum': q_num,
                             'studentAnswer': res.get('studentAnswer', ''),

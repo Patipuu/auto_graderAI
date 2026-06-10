@@ -38,7 +38,7 @@ export default function ApproveQueue() {
       const submission = await res.json();
 
       // Find and update the result
-      const newResults = submission.results.map((r: any) => 
+      const newResults = submission.results.map((r: any) =>
         r.questionNum === item.questionNum
           ? { ...r, score: item.suggestedScore }
           : r
@@ -53,7 +53,7 @@ export default function ApproveQueue() {
         body: JSON.stringify({ results: newResults, totalScore: newTotal })
       });
 
-      toast.success(`Đã duyệt điểm cho câu ${item.questionNum} của học sinh ${item.studentName}`);
+      toast.success(`Đã duyệt điểm cho câu ${item.questionNum} của học sinh ${item.studentName} lớp ${item.studentClass}`);
       setQueue(queue.filter(q => !(q.submissionId === item.submissionId && q.questionNum === item.questionNum)));
     } catch (err) {
       toast.error('Lỗi khi duyệt điểm');
@@ -108,6 +108,7 @@ export default function ApproveQueue() {
                     <FileText className="w-4 h-4 text-blue-500" /> {item.examTitle}
                   </CardTitle>
                   <p className="text-xs font-medium text-slate-500 mt-1">Học sinh: <span className="font-bold text-slate-700">{item.studentName}</span></p>
+                  <p className="text-xs font-medium text-slate-500 mt-1">Lớp: <span className="font-bold text-slate-700">{item.studentClass}</span></p>
                 </CardHeader>
                 <CardContent className="p-4 flex-1 flex flex-col gap-4">
                   <div className="flex-1 space-y-3">
@@ -134,10 +135,10 @@ export default function ApproveQueue() {
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="flex items-center gap-2 mt-auto pt-2">
                     <div className="flex-1 flex items-center bg-slate-50 rounded-xl border border-slate-200 overflow-hidden focus-within:ring-2 ring-amber-500 ring-offset-1 transition-all">
-                      <Input 
+                      <Input
                         type="number"
                         step="0.25"
                         min="0"
@@ -147,7 +148,7 @@ export default function ApproveQueue() {
                           const newScore = parseFloat(e.target.value);
                           const newQueue = [...queue];
                           const idx = newQueue.findIndex(q => q.submissionId === item.submissionId && q.questionNum === item.questionNum);
-                          if(idx !== -1) {
+                          if (idx !== -1) {
                             newQueue[idx].suggestedScore = isNaN(newScore) ? 0 : Math.min(newScore, item.maxScore);
                             setQueue(newQueue);
                           }
@@ -155,7 +156,7 @@ export default function ApproveQueue() {
                         className="h-10 text-center font-black border-0 bg-transparent rounded-none flex-1 focus-visible:ring-0 px-2"
                       />
                     </div>
-                    <Button 
+                    <Button
                       className="h-10 px-4 bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-sm transition-all active:scale-95 flex items-center gap-1.5"
                       onClick={() => handleApprove(item)}
                     >
@@ -167,7 +168,7 @@ export default function ApproveQueue() {
             </motion.div>
           ))}
         </AnimatePresence>
-        
+
         {queue.length === 0 && (
           <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-slate-50/50">
             <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
