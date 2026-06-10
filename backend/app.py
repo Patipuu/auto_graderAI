@@ -1,4 +1,5 @@
 import os
+# pyrefly: ignore [missing-import]
 from flask import Flask, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv, dotenv_values
@@ -53,8 +54,8 @@ if __name__ == '__main__':
     print(f"MongoDB initialized at {MONGO_URI}, database={MONGO_DB_NAME}, collection={MONGO_COLLECTION}")
     
     # Start Server
-    print(f"🚀 Starting Flask server on http://localhost:3000")
-    print(f"📚 API docs: POST /api/login, GET /api/questions, POST /api/ai/grade-submission, etc.")
+    print(f"Starting Flask server on http://localhost:3000")
+    print(f"API docs: POST /api/login, GET /api/questions, POST /api/ai/grade-submission, etc.")
     
     debug_enabled = os.getenv('FLASK_DEBUG', '0') == '1'
-    app.run(debug=debug_enabled, port=3000, host='0.0.0.0', use_reloader=False)
+    app.run(debug=debug_enabled, port=3000, host='0.0.0.0', use_reloader=True)

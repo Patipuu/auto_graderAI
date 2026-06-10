@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
-import { PlusCircle, FileText, Upload, CheckSquare, BarChart3, Users, ArrowUpRight } from 'lucide-react';
+import { PlusCircle, FileText, Upload, CheckSquare, BarChart3, Users, ArrowUpRight, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function Dashboard() {
@@ -13,16 +13,26 @@ export default function Dashboard() {
     needsReview: 0,
     latestSubmission: null as any
   });
+  const [duplicateStudentIds, setDuplicateStudentIds] = useState<Array<{
+    studentId: string;
+    count: number;
+    submissions: Array<{ id: string; studentName?: string; examTitle?: string; studentClass?: string }>;
+  }>>([]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [examsRes, subRes] = await Promise.all([
+        const [examsRes, subRes, dupRes] = await Promise.all([
           fetch('/api/exams'),
-          fetch('/api/submissions')
+          fetch('/api/submissions'),
+          fetch('/api/submissions/duplicates/student-ids'),
         ]);
         const exams = await examsRes.json();
         const submissions = await subRes.json();
+        if (dupRes.ok) {
+          const dupData = await dupRes.json();
+          setDuplicateStudentIds(dupData.duplicates || []);
+        }
         
         const totalExams = exams.length;
         const totalSubmissions = submissions.length;
@@ -66,9 +76,9 @@ export default function Dashboard() {
         </div>
         <div className="flex gap-3">
           <Link to="/upload">
-            <Button className="gap-2 bg-blue-600 hover:bg-blue-700 shadow-sm transition-all active:scale-95 px-6">
+            {/* <Button className="gap-2 bg-blue-600 hover:bg-blue-700 shadow-sm transition-all active:scale-95 px-6">
               <Upload className="w-4 h-4" /> Chấm bài mới
-            </Button>
+            </Button> */}
           </Link>
         </div>
       </div>
@@ -104,6 +114,40 @@ export default function Dashboard() {
           </motion.div>
         ))}
       </motion.div>
+
+      {duplicateStudentIds.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/40 shadow-sm">
+          <CardHeader className="py-3 px-5 border-b border-amber-100">
+            <CardTitle className="text-sm font-bold text-amber-900 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              Cảnh báo MSHS trùng ({duplicateStudentIds.length} mã)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 space-y-3 max-h-56 overflow-y-auto">
+            {duplicateStudentIds.map((group) => (
+              <div key={group.studentId} className="rounded-xl border border-amber-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-xs font-black font-mono text-amber-900">{group.studentId}</span>
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                    {group.count} bài làm
+                  </span>
+                </div>
+                <ul className="space-y-1">
+                  {group.submissions.map((sub) => (
+                    <li key={sub.id} className="text-[11px] text-slate-600">
+                      <Link to={`/results/${sub.id}`} className="font-semibold text-blue-700 hover:underline">
+                        {sub.studentName || 'Không tên'}
+                      </Link>
+                      <span className="text-slate-400"> · {sub.examTitle || 'Không rõ đề'}</span>
+                      {sub.studentClass && <span className="text-slate-400"> · {sub.studentClass}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="card-polish md:col-span-2">

@@ -26,6 +26,18 @@ def result_needs_manual_review(result, submission):
     low_confidence = float(submission.get('confidence', 1) or 1) < 0.85
     return partial_score or low_confidence
 
+def _normalize_student_id(student_id):
+    return str(student_id or '').strip().lower()
+
+def _submission_brief(sub):
+    return {
+        'id': sub.get('id'),
+        'studentName': sub.get('studentName'),
+        'studentClass': sub.get('studentClass'),
+        'examTitle': sub.get('examTitle'),
+        'processedAt': sub.get('processedAt'),
+    }
+
 class SubmissionService:
     @staticmethod
     def get_submissions(student='', exam_title=''):
@@ -35,6 +47,48 @@ class SubmissionService:
         if exam_title:
             submissions = [s for s in submissions if exam_title in s.get('examTitle', '').lower()]
         return submissions
+
+    @staticmethod
+    def get_duplicate_student_ids():
+        submissions = SubmissionRepository.get_all()
+        groups = {}
+
+        for sub in submissions:
+            raw_id = (sub.get('studentId') or '').strip()
+            if not raw_id:
+                continue
+
+            key = _normalize_student_id(raw_id)
+            if key not in groups:
+                groups[key] = {
+                    'studentId': raw_id,
+                    'count': 0,
+                    'submissions': [],
+                }
+
+            groups[key]['count'] += 1
+            groups[key]['submissions'].append(_submission_brief(sub))
+
+        duplicates = [g for g in groups.values() if g['count'] > 1]
+        duplicates.sort(key=lambda x: (-x['count'], x['studentId']))
+        return duplicates
+
+    @staticmethod
+    def check_student_id(student_id, exclude_submission_id=None):
+        normalized = _normalize_student_id(student_id)
+        if not normalized:
+            return []
+
+        matches = []
+        for sub in SubmissionRepository.get_all():
+            if exclude_submission_id and str(sub.get('id')) == str(exclude_submission_id):
+                continue
+
+            other = (sub.get('studentId') or '').strip()
+            if other and _normalize_student_id(other) == normalized:
+                matches.append(_submission_brief(sub))
+
+        return matches
 
     @staticmethod
     def get_submission(submission_id):
@@ -70,12 +124,36 @@ class SubmissionService:
         return sub
 
     @staticmethod
+    def _is_mshs_conflict(student_id, student_name, exclude_id=None):
+        if not student_id:
+            return False, None
+        normalized_id = _normalize_student_id(student_id)
+        if not normalized_id:
+            return False, None
+            
+        normalized_name = (student_name or '').strip().lower()
+        
+        for sub in SubmissionRepository.get_all():
+            if exclude_id and str(sub.get('id')) == str(exclude_id):
+                continue
+            other_id = _normalize_student_id(sub.get('studentId'))
+            if other_id == normalized_id:
+                other_name = (sub.get('studentName') or '').strip().lower()
+                if other_name != normalized_name:
+                    return True, sub.get('studentName') or 'Không tên'
+        return False, None
+
+    @staticmethod
     def create_submission(data):
         required = ['examId', 'examTitle', 'results', 'totalScore']
         if not all(k in data for k in required):
             return None, "Missing required fields"
         if not isinstance(data['results'], list):
             return None, "results must be array"
+
+        conflict, other_name = SubmissionService._is_mshs_conflict(data.get('studentId'), data.get('studentName'))
+        if conflict:
+            return None, f"MSHS này đã được sử dụng bởi học sinh: {other_name}"
 
         total_questions, correct_answers, calculated_total = calculate_submission_stats(data['results'])
         calculated_max = sum(float(r.get('maxScore', 1) or 1) for r in data['results'])
@@ -109,6 +187,13 @@ class SubmissionService:
         sub = SubmissionRepository.get_by_id(submission_id)
         if not sub:
             return None, "Submission not found"
+
+        student_id_to_check = data.get('studentId') if 'studentId' in data else sub.get('studentId')
+        student_name_to_check = data.get('studentName') if 'studentName' in data else sub.get('studentName')
+
+        conflict, other_name = SubmissionService._is_mshs_conflict(student_id_to_check, student_name_to_check, exclude_id=submission_id)
+        if conflict:
+            return None, f"MSHS này đã được sử dụng bởi học sinh: {other_name}"
 
         update_payload = {}
         if 'results' in data and isinstance(data['results'], list):
@@ -324,3 +409,64 @@ class SubmissionService:
                 SubmissionRepository.update(sub['id'], update_payload)
                 
         return updated_count
+
+    @staticmethod
+    def get_student_profiles():
+        submissions = SubmissionRepository.get_all()
+        profiles = {}
+        
+        for sub in submissions:
+            mshs = _normalize_student_id(sub.get('studentId'))
+            name = (sub.get('studentName') or '').strip()
+            if not mshs:
+                if not name:
+                    continue
+                key = f"name_{name.lower()}"
+            else:
+                key = f"mshs_{mshs}"
+                
+            if key not in profiles:
+                profiles[key] = {
+                    'studentId': sub.get('studentId') or '',
+                    'studentName': name,
+                    'studentClass': sub.get('studentClass') or '',
+                    'exams': [],
+                    'averageScore': 0,
+                    'academicPerformance': 'Yếu'
+                }
+                
+            profiles[key]['exams'].append({
+                'examId': sub.get('examId'),
+                'examTitle': sub.get('examTitle'),
+                'totalScore': float(sub.get('totalScore') or 0),
+                'processedAt': sub.get('processedAt')
+            })
+            
+            if sub.get('studentClass'):
+                profiles[key]['studentClass'] = sub.get('studentClass')
+                
+            if not profiles[key]['studentName'] and name:
+                profiles[key]['studentName'] = name
+                
+        result_list = []
+        for p in profiles.values():
+            exams = p['exams']
+            if not exams:
+                continue
+            avg_score = sum(e['totalScore'] for e in exams) / len(exams)
+            p['averageScore'] = round(avg_score, 2)
+            
+            if avg_score >= 8.0:
+                p['academicPerformance'] = 'Giỏi'
+            elif avg_score >= 6.5:
+                p['academicPerformance'] = 'Khá'
+            elif avg_score >= 5.0:
+                p['academicPerformance'] = 'Trung bình'
+            else:
+                p['academicPerformance'] = 'Yếu'
+                
+            result_list.append(p)
+            
+        # Sort by name as default
+        result_list.sort(key=lambda x: x['studentName'].lower())
+        return result_list

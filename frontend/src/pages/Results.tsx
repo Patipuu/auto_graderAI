@@ -35,6 +35,12 @@ export default function Results() {
     questionNum: number;
     studentAnswer?: string;
   } | null>(null);
+  const [studentIdDuplicates, setStudentIdDuplicates] = useState<Array<{
+    id: string;
+    studentName?: string;
+    examTitle?: string;
+    studentClass?: string;
+  }>>([]);
 
   const UNAVAILABLE_QUESTION = 'Nội dung câu hỏi không khả dụng';
   const COMPACT_CELL_CLASS =
@@ -70,6 +76,46 @@ export default function Results() {
     };
     fetchResult();
   }, [id]);
+
+  const checkStudentIdDuplicate = async (studentId: string, showToast = false) => {
+    const trimmed = studentId?.trim();
+    if (!trimmed) {
+      setStudentIdDuplicates([]);
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        studentId: trimmed,
+        ...(id ? { excludeId: id } : {}),
+      });
+      const res = await fetch(`/api/submissions/check-student-id?${params}`);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const matches = data.matches || [];
+      setStudentIdDuplicates(matches);
+
+      if (showToast && data.isDuplicate) {
+        const names = matches
+          .map((m: any) => m.studentName || 'Học sinh không tên')
+          .slice(0, 3)
+          .join(', ');
+        toast.warning(
+          `MSHS "${trimmed}" đã tồn tại (${matches.length} bài khác)${names ? `: ${names}` : ''}`,
+          { duration: 5000 }
+        );
+      }
+    } catch {
+      // ignore check errors
+    }
+  };
+
+  useEffect(() => {
+    if (submission?.studentId?.trim()) {
+      checkStudentIdDuplicate(submission.studentId);
+    }
+  }, [submission?.id]);
 
   const handleTextSelection = (e: React.MouseEvent, questionNum: number) => {
     const selection = window.getSelection();
@@ -379,8 +425,11 @@ export default function Results() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(submission)
       });
+      const data = await res.json();
       if (res.ok) {
         toast.success('Bảng điểm đã được lưu thành công');
+      } else {
+        toast.error(data.message || 'Lỗi khi lưu bảng điểm');
       }
     } catch (err) {
       toast.error('Lỗi khi lưu bảng điểm');
@@ -568,10 +617,36 @@ export default function Results() {
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Mã số (MSHS)</label>
                     <Input
                       value={submission.studentId || ''}
-                      onChange={e => setSubmission({ ...submission, studentId: e.target.value })}
+                      onChange={e => {
+                        setSubmission({ ...submission, studentId: e.target.value });
+                        if (!e.target.value.trim()) setStudentIdDuplicates([]);
+                      }}
+                      onBlur={e => checkStudentIdDuplicate(e.target.value, true)}
                       placeholder="Trống..."
-                      className="h-9 text-xs font-mono text-center border-slate-200 mt-1"
+                      className={`h-9 text-xs font-mono text-center mt-1 ${
+                        studentIdDuplicates.length > 0
+                          ? 'border-amber-400 bg-amber-50/50 focus-visible:ring-amber-400'
+                          : 'border-slate-200'
+                      }`}
                     />
+                    {studentIdDuplicates.length > 0 && (
+                      <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 p-2 text-left">
+                        <p className="text-[10px] font-bold text-amber-800 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3 shrink-0" />
+                          MSHS trùng ({studentIdDuplicates.length} bài khác)
+                        </p>
+                        <ul className="mt-1 space-y-0.5 max-h-20 overflow-y-auto">
+                          {studentIdDuplicates.map((m) => (
+                            <li key={m.id} className="text-[10px] text-amber-900">
+                              <Link to={`/results/${m.id}`} className="hover:underline font-medium">
+                                {m.studentName || 'Không tên'}
+                              </Link>
+                              <span className="text-amber-700"> — {m.examTitle || 'Không rõ đề'}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Lớp học</label>

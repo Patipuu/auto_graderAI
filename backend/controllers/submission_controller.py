@@ -12,6 +12,12 @@ def get_submissions():
     submissions = SubmissionService.get_submissions(student, exam_title)
     return jsonify(submissions), 200
 
+@submission_bp.route('/api/students', methods=['GET'])
+def get_students():
+    """Fetch all student profiles aggregated by MSHS"""
+    profiles = SubmissionService.get_student_profiles()
+    return jsonify(profiles), 200
+
 @submission_bp.route('/api/submissions', methods=['POST'])
 def create_submission():
     """Create submission from AI grading results"""
@@ -22,6 +28,30 @@ def create_submission():
         return jsonify({'success': False, 'message': error}), 400
         
     return jsonify(new_submission), 201
+
+@submission_bp.route('/api/submissions/duplicates/student-ids', methods=['GET'])
+def get_duplicate_student_ids():
+    """List MSHS values used by more than one submission"""
+    duplicates = SubmissionService.get_duplicate_student_ids()
+    return jsonify({
+        'success': True,
+        'totalDuplicates': len(duplicates),
+        'duplicates': duplicates,
+    }), 200
+
+@submission_bp.route('/api/submissions/check-student-id', methods=['GET'])
+def check_student_id():
+    """Check whether an MSHS already exists on other submissions"""
+    student_id = request.args.get('studentId', '')
+    exclude_id = request.args.get('excludeId')
+
+    matches = SubmissionService.check_student_id(student_id, exclude_id)
+    return jsonify({
+        'success': True,
+        'studentId': student_id.strip(),
+        'isDuplicate': len(matches) > 0,
+        'matches': matches,
+    }), 200
 
 @submission_bp.route('/api/submissions/queue', methods=['GET'])
 def get_approve_queue():

@@ -8,8 +8,9 @@ import SubmissionUpload from '@/pages/SubmissionUpload';
 import SubmissionHistory from '@/pages/SubmissionHistory';
 import Results from '@/pages/Results';
 import ApproveQueue from '@/pages/ApproveQueue';
+import Students from '@/pages/Students';
 import { Toaster } from '@/components/ui/sonner';
-import { LayoutDashboard, FileText, Upload, LogOut, ChevronRight, Library, BarChart3, CheckSquare } from 'lucide-react';
+import { LayoutDashboard, FileText, Upload, LogOut, ChevronRight, Library, BarChart3, CheckSquare, GraduationCap } from 'lucide-react';
 
 function Navigation() {
   const location = useLocation();
@@ -19,6 +20,7 @@ function Navigation() {
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/exams', label: 'Thư viện đề thi', icon: FileText },
     { path: '/history', label: 'Lịch sử chấm bài', icon: BarChart3 },
+    { path: '/students', label: 'Hồ sơ học sinh', icon: GraduationCap },
     { path: '/approve-queue', label: 'Hàng đợi duyệt', icon: CheckSquare },
     { path: '/questions', label: 'Ngân hàng câu hỏi', icon: Library },
     { path: '/upload', label: 'Chấm bài mới', icon: Upload },
@@ -124,6 +126,7 @@ export default function App() {
                         <Route path="/questions" element={<QuestionBank />} />
                         <Route path="/upload" element={<SubmissionUpload />} />
                         <Route path="/results/:id" element={<Results />} />
+                        <Route path="/students" element={<Students />} />
                       </Routes>
                     </div>
                   </main>
