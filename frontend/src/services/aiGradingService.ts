@@ -36,7 +36,8 @@ export const aiGradingService = {
   async gradeSubmission(
     base64Image: string,
     mimeType: string,
-    examId: string
+    examId: string,
+    gradingType?: string
   ): Promise<SubmissionGradeResult> {
     const response = await fetch('/api/ai/grade-submission', {
       method: 'POST',
@@ -44,7 +45,7 @@ export const aiGradingService = {
         'Content-Type': 'application/json',
         ...authHeaders()
       },
-      body: JSON.stringify({ base64Image, mimeType, examId })
+      body: JSON.stringify({ base64Image, mimeType, examId, gradingType })
     });
 
     return parseApiResponse<SubmissionGradeResult>(response);

@@ -7,7 +7,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Plus, Trash2, Search, FileEdit, MoreVertical, FileText, AlertTriangle, Library, Check, Eye } from 'lucide-react';
+import { Plus, Trash2, Search, FileEdit, MoreVertical, FileText, AlertTriangle, Library, Check, Eye, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -37,6 +37,7 @@ interface Exam {
   rubricGroups?: { [key: number]: RubricGroup[] };
   totalPoints?: number;
   questionIds?: string[];
+  gradingType?: 'OMR' | 'HYBRID';
   createdAt: string;
 }
 
@@ -47,7 +48,7 @@ export default function ExamManagement() {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [examToDelete, setExamToDelete] = useState<string | null>(null);
-  const [newExam, setNewExam] = useState({ title: '', subject: '', questionCount: 10 });
+  const [newExam, setNewExam] = useState({ title: '', subject: '', questionCount: 10, gradingType: 'HYBRID' });
   const [creationMode, setCreationMode] = useState<'manual' | 'bank'>('manual');
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
@@ -195,7 +196,7 @@ export default function ExamManagement() {
       if (res.ok) {
         toast.success('Đã tạo đề thi mới thành công');
         setIsAdding(false);
-        setNewExam({ title: '', subject: '', questionCount: 10 });
+        setNewExam({ title: '', subject: '', questionCount: 10, gradingType: 'HYBRID' });
         setSelectedQuestionIds([]);
         fetchExams();
       }
@@ -245,6 +246,16 @@ export default function ExamManagement() {
     } catch (err) {
       toast.error('Lỗi khi xóa đề thi');
     }
+  };
+
+  const handleDownloadOMRTemplate = (examId: string, title: string) => {
+    const link = document.createElement('a');
+    link.href = `/api/exams/${examId}/omr-template`;
+    link.download = `OMR_Template_${title.replace(/\s+/g, '_')}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Bắt đầu tải xuống mẫu phiếu OMR');
   };
 
   const [isEditingKey, setIsEditingKey] = useState(false);
@@ -320,7 +331,7 @@ export default function ExamManagement() {
               <DialogTitle className="text-xl font-bold">Tạo đề thi mới</DialogTitle>
             </DialogHeader>
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="title" className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tên đề thi</Label>
                   <Input 
@@ -340,6 +351,18 @@ export default function ExamManagement() {
                     value={newExam.subject}
                     onChange={e => setNewExam({...newExam, subject: e.target.value})}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gradingType" className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Phương thức chấm</Label>
+                  <select 
+                    id="gradingType"
+                    className="flex h-11 w-full rounded-xl border border-slate-200 bg-background px-3 py-2 text-xs font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-500"
+                    value={newExam.gradingType}
+                    onChange={e => setNewExam({...newExam, gradingType: e.target.value as any})}
+                  >
+                    <option value="HYBRID">Hỗn hợp</option>
+                    <option value="OMR">Trắc nghiệm OMR</option>
+                  </select>
                 </div>
               </div>
 
@@ -567,15 +590,26 @@ export default function ExamManagement() {
                     <p className="text-sm text-slate-400 mt-1 font-medium">{examForKey?.title} • {examForKey?.subject}</p>
                   </div>
                 </div>
-                <div className="flex gap-4 items-center px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
-                   <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-blue-600" />
-                      <span className="text-[10px] font-bold text-slate-500 uppercase">Trắc nghiệm</span>
-                   </div>
-                   <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-amber-500" />
-                      <span className="text-[10px] font-bold text-slate-500 uppercase">Tự luận</span>
-                   </div>
+                <div className="flex gap-3 items-center">
+                  {examForKey && (
+                    <Button
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold h-9 rounded-xl flex items-center gap-2 px-4 shadow-sm"
+                      onClick={() => handleDownloadOMRTemplate(examForKey.id, examForKey.title)}
+                    >
+                      <Download className="w-4 h-4" /> Tải mẫu phiếu OMR ({examForKey.questionCount} câu)
+                    </Button>
+                  )}
+                  <div className="flex gap-4 items-center px-4 py-2 bg-slate-50 rounded-xl border border-slate-100 h-9">
+                     <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-blue-600" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase">Trắc nghiệm</span>
+                     </div>
+                     <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full bg-amber-500" />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase">Tự luận</span>
+                     </div>
+                  </div>
                 </div>
               </div>
             </DialogHeader>
@@ -947,7 +981,21 @@ export default function ExamManagement() {
                   >
                     <TableCell className="px-6 py-4">
                       <div className="font-bold text-slate-800">{exam.title}</div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">ID: {exam.id}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] text-slate-400 font-mono">ID: {exam.id}</span>
+                        <>
+                          <span className="text-[10px] text-slate-300">•</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadOMRTemplate(exam.id, exam.title);
+                            }}
+                            className="text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                          >
+                            <Download className="w-3 h-3" /> Tải mẫu phiếu OMR ({exam.questionCount} câu)
+                          </button>
+                        </>
+                      </div>
                     </TableCell>
                     <TableCell className="px-6 py-4">
                       <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-100 font-bold text-[10px] uppercase tracking-wider">{exam.subject}</Badge>
@@ -988,6 +1036,18 @@ export default function ExamManagement() {
                           title="Cấu hình đáp án"
                         >
                           <Check className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadOMRTemplate(exam.id, exam.title);
+                          }}
+                          title={`Tải mẫu OMR ${exam.questionCount} câu`}
+                        >
+                          <Download className="h-4 w-4" />
                         </Button>
                         <Button 
                           variant="ghost" 
@@ -1115,8 +1175,19 @@ export default function ExamManagement() {
               )}
             </div>
           </div>
-          <DialogFooter className="p-6 border-t bg-white">
-            <Button className="w-full bg-slate-900 hover:bg-black text-white font-black h-12 rounded-2xl" onClick={() => setIsPreviewing(false)}>
+          <DialogFooter className="p-6 border-t bg-white flex flex-col sm:flex-row gap-3">
+            {previewExam && (
+              <Button 
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black h-12 rounded-2xl flex items-center justify-center gap-2"
+                onClick={() => handleDownloadOMRTemplate(previewExam.id, previewExam.title)}
+              >
+                <Download className="w-4 h-4" /> Tải mẫu phiếu OMR ({previewExam.questionCount} câu)
+              </Button>
+            )}
+            <Button 
+              className={cn("bg-slate-900 hover:bg-black text-white font-black h-12 rounded-2xl", previewExam ? "flex-1" : "w-full")} 
+              onClick={() => setIsPreviewing(false)}
+            >
               Đóng xem chi tiết
             </Button>
           </DialogFooter>

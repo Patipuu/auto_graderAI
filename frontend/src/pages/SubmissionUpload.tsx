@@ -66,7 +66,7 @@ export default function SubmissionUpload() {
 
       // Step 2: AI Processing
       toast.info('Đang gửi bài cho AI xử lý...');
-      const aiResult = await aiGradingService.gradeSubmission(base64, file.type || 'image/jpeg', selectedExamId);
+      const aiResult = await aiGradingService.gradeSubmission(base64, file.type || 'image/jpeg', selectedExamId, exam.gradingType);
 
       if (progressInterval) clearInterval(progressInterval);
       setProgress(95);
@@ -79,6 +79,8 @@ export default function SubmissionUpload() {
           examId: selectedExamId,
           examTitle: exam.title,
           ...aiResult,
+          studentImage: `data:${file.type};base64,${base64}`,
+          gradingType: exam.gradingType || 'HYBRID',
           fileType: file.type
         })
       });

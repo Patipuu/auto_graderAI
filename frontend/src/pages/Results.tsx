@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { CheckCircle2, XCircle, AlertCircle, ArrowLeft, Download, User, BookOpen, Save, ShieldCheck, Sparkles, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { aiGradingService } from '@/services/aiGradingService';
+import { cn } from '@/lib/utils';
 import MathText from '@/components/MathText';
 
 export default function Results() {
@@ -225,9 +226,9 @@ export default function Results() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Profile Card */}
-        <div className="lg:col-span-1 space-y-6">
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-8">
+        {/* Left Side: Profile & Student Exam Image */}
+        <div className="xl:col-span-2 space-y-6">
           <Card className="card-polish">
             <div className="h-20 bg-slate-900 relative">
                <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 border-4 border-white rounded-2xl shadow-xl bg-slate-50 overflow-hidden">
@@ -301,10 +302,74 @@ export default function Results() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Exam Image Card */}
+          <Card className="card-polish overflow-hidden">
+             <CardHeader className="py-3 px-6 bg-slate-50 border-b border-slate-100 flex flex-row items-center justify-between">
+                <CardTitle className="text-sm font-bold">Ảnh bài làm của học sinh</CardTitle>
+                <Badge className="bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold border border-blue-200 text-[10px] uppercase">
+                   {submission.gradingType === 'OMR' ? 'OMR OpenCV' : 'Hybrid Text OCR'}
+                </Badge>
+             </CardHeader>
+             <CardContent className="p-4 flex items-center justify-center">
+                {submission.gradingType === 'OMR' && submission.markedImage ? (
+                  <img src={submission.markedImage} alt="OMR Results" className="w-full h-auto rounded-xl shadow-sm border border-slate-100" />
+                ) : submission.studentImage ? (
+                  <div className="relative w-full overflow-hidden rounded-xl border border-slate-100 shadow-sm bg-slate-50">
+                    <img src={submission.studentImage} alt="Student Handwriting" className="w-full h-auto block" />
+                    
+                    {/* Bounding box SVG/HTML Overlay */}
+                    <div className="absolute inset-0 pointer-events-auto">
+                      {submission.results?.map((res: any) => {
+                         if (!res.boundingBox) return null;
+                         const [ymin, xmin, ymax, xmax] = res.boundingBox;
+                         const top = ymin / 10;
+                         const left = xmin / 10;
+                         const height = (ymax - ymin) / 10;
+                         const width = (xmax - xmin) / 10;
+                         const isCorrect = res.isCorrect;
+                         return (
+                           <div
+                             key={res.questionNum}
+                             style={{
+                               position: 'absolute',
+                               top: `${top}%`,
+                               left: `${left}%`,
+                               width: `${width}%`,
+                               height: `${height}%`,
+                               border: `2px solid ${isCorrect ? '#22c55e' : '#ef4444'}`,
+                               backgroundColor: `${isCorrect ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)'}`,
+                             }}
+                             className="group transition-all hover:bg-black/10 rounded cursor-help"
+                           >
+                             <span className={cn(
+                               "absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-black text-white shadow-sm pointer-events-none whitespace-nowrap",
+                               isCorrect ? "bg-green-600" : "bg-red-500"
+                             )}>
+                               Câu {res.questionNum}: {res.score}đ
+                             </span>
+                             
+                             {/* Hover tooltip showing feedback */}
+                             <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-6 w-48 p-2 bg-slate-900 text-white text-[10px] rounded shadow-lg z-50 pointer-events-none">
+                               <p className="font-bold">Câu {res.questionNum}: {res.score}/{res.maxScore}đ</p>
+                               <p className="mt-1 line-clamp-3">{res.feedback}</p>
+                             </div>
+                           </div>
+                         );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center text-slate-400 italic text-xs">
+                     Không tìm thấy ảnh bài làm gốc.
+                  </div>
+                )}
+             </CardContent>
+          </Card>
         </div>
 
         {/* Detailed Results Table */}
-        <div className="lg:col-span-3 space-y-6">
+        <div className="xl:col-span-3 space-y-6">
           <Card className="card-polish">
             <CardHeader className="border-b border-slate-50 py-4 px-6 flex flex-row items-center justify-between bg-slate-50/30">
               <CardTitle className="text-base font-bold">Phân tích chi tiết câu trả lời</CardTitle>

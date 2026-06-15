@@ -52,6 +52,9 @@ class SubmissionService:
             'requiresManualReview': bool(data.get('requiresManualReview', False)),
             'aiStatus': data.get('aiStatus', 'completed'),
             'fileType': data.get('fileType'),
+            'markedImage': data.get('markedImage'),
+            'studentImage': data.get('studentImage'),
+            'gradingType': data.get('gradingType'),
             'processedAt': now_iso(),
             'gradedAt': now_iso()
         }

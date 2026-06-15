@@ -113,6 +113,7 @@ class ExamService:
             'id': str(int(datetime.now().timestamp() * 1000)),
             'title': data['title'].strip(),
             'subject': data['subject'].strip(),
+            'gradingType': data.get('gradingType', 'HYBRID'),
             'questionCount': question_count,
             'answerKey': answer_key,
             'questionPoints': question_points,
@@ -134,7 +135,7 @@ class ExamService:
         previous_question_ids = list(exam.get('questionIds', []))
         update_payload = {}
 
-        for key in ['title', 'subject', 'answerKey', 'questionIds', 'questionCount', 'questionPoints', 'rubricGroups']:
+        for key in ['title', 'subject', 'answerKey', 'questionIds', 'questionCount', 'questionPoints', 'rubricGroups', 'gradingType']:
             if key in data:
                 update_payload[key] = data[key]
 

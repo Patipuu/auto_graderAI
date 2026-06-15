@@ -9,9 +9,10 @@ ai_bp = Blueprint('ai_bp', __name__)
 @ai_bp.route('/api/ai/grade-submission', methods=['POST'])
 def grade_submission():
     """
-    [SERVER-SIDE PROXY] Grade entire submission via Gemini
+    Grade entire submission using either OpenCV OMR or Hybrid OCR + Gemini
     """
-    from services.ai_service import grade_submission_with_gemini
+    from services.ai_service import grade_submission_with_gemini, grade_hybrid_submission_with_gemini
+    from services.omr_service import grade_bubble_sheet
 
     data = request.json or {}
     required = ['base64Image', 'mimeType', 'examId']
@@ -23,15 +24,25 @@ def grade_submission():
     if not exam:
         return jsonify({'success': False, 'message': 'Exam not found'}), 404
 
+    grading_type = data.get('gradingType') or exam.get('gradingType') or 'HYBRID'
+
     try:
-        result = grade_submission_with_gemini(
-            base64_image=data['base64Image'],
-            mime_type=data['mimeType'],
-            exam=exam
-        )
+        if grading_type == 'OMR':
+            result = grade_bubble_sheet(
+                base64_image=data['base64Image'],
+                mime_type=data['mimeType'],
+                exam=exam
+            )
+        else:
+            result = grade_hybrid_submission_with_gemini(
+                base64_image=data['base64Image'],
+                mime_type=data['mimeType'],
+                exam=exam
+            )
         return jsonify(result), 200
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
 
 @ai_bp.route('/api/ai/re-evaluate-question', methods=['POST'])
 def re_evaluate_question():

@@ -308,7 +308,161 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
             )
         raise Exception(f"Gemini API error: {str(e)}")
 
+# ==================== GEMINI HYBRID GRADE SUBMISSION ====================
+
+def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Process hybrid exam via local OCR text extraction + Gemini text-based grading
+    and maps the local OCR bounding boxes to the graded questions.
+    """
+    from services.local_ocr_service import perform_local_ocr
+    
+    # 1. Run local OCR to get text segments & bounding boxes
+    ocr_results = perform_local_ocr(base64_image, mime_type)
+    if not ocr_results:
+        # Fallback to full image Vision grading if OCR fails
+        return grade_submission_with_gemini(base64_image, mime_type, exam)
+
+    # 2. Combine OCR texts with index labels
+    ocr_lines_str = ""
+    for idx, item in enumerate(ocr_results):
+        ocr_lines_str += f"Dòng [{idx}]: {item['text']}\n"
+
+    answer_key = {str(k): v for k, v in exam.get('answerKey', {}).items()}
+    question_count = int(exam.get('questionCount') or len(answer_key) or 0)
+    question_points = {
+        str(k): float(v)
+        for k, v in (exam.get('questionPoints') or {}).items()
+    }
+    if not question_points:
+        question_points = {str(i): 1.0 for i in range(1, question_count + 1)}
+
+    prompt = f"""
+    Bạn là một trợ lý giáo vụ AI chuyên chấm điểm bài thi dựa trên kết quả trích xuất văn bản (Text) từ bài làm của học sinh.
+    
+    Thông tin đề thi:
+    - Tên đề: {exam.get('title', 'Unknown')}
+    - Môn học: {exam.get('subject', 'Unknown')}
+    - Đáp án/rubric chấm theo từng câu: {json.dumps(exam.get('answerKey', {}), ensure_ascii=False)}
+    - Structured rubric item groups per question: {format_rubric_groups_for_prompt(exam.get('rubricGroups', {}))}
+    - Điểm tối đa từng câu: {json.dumps(question_points, ensure_ascii=False)}
+    
+    Văn bản trích xuất từ bài làm học sinh (kèm chỉ số dòng [idx]):
+    {ocr_lines_str}
+    
+    Hãy thực hiện các bước sau:
+    1. Trích xuất Tên học sinh, Mã học sinh, Lớp học từ các dòng text.
+    2. Xác định câu trả lời của học sinh cho từng câu hỏi bằng cách phân tích nội dung các dòng text.
+    3. Chấm điểm theo thang điểm tối đa từng câu và Rubric. Chỉ dùng bước nhảy 0.25 điểm.
+    4. Đối với mỗi câu hỏi, hãy chỉ ra chỉ số dòng `matchedOcrIndex` (số từ 0 đến {len(ocr_results) - 1}) tương ứng với phần nội dung bài làm của câu đó.
+    
+    Trả về JSON với cấu trúc chính xác sau (KHÔNG có text khác):
+    {{
+        "studentName": "Tên học sinh hoặc null",
+        "studentId": "Mã học sinh hoặc null",
+        "studentClass": "Tên lớp học hoặc null",
+        "results": [
+            {{
+                "questionNum": 1,
+                "studentAnswer": "Nội dung học sinh viết",
+                "isCorrect": true/false,
+                "score": 1.0,
+                "feedback": "Nhận xét ngắn gọn",
+                "matchedOcrIndex": 0
+            }}
+        ],
+        "totalScore": 8.5,
+        "confidence": 0.92
+    }}
+    """
+
+    if not client:
+        raise Exception("Gemini API key not configured")
+
+    try:
+        response = generate_content_with_fallback(
+            contents=[{"role": "user", "parts": [{"text": prompt}]}],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.1
+            )
+        )
+
+        response_text = response.text.strip()
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+
+        result = json.loads(response_text)
+
+        sanitized_results = []
+        result_by_num = {
+            int(r.get('questionNum')): r
+            for r in result.get('results', [])
+            if str(r.get('questionNum', '')).isdigit()
+        }
+        expected_numbers = range(1, question_count + 1) if question_count else sorted(result_by_num.keys())
+
+        for question_num in expected_numbers:
+            raw = result_by_num.get(question_num, {})
+            max_question_score = float(question_points.get(str(question_num), 1.0))
+            score = round_quarter_point(float(raw.get('score', 0) or 0), max_question_score)
+            reference_answer = str(answer_key.get(str(question_num), '')).strip()
+            student_answer = str(raw.get('studentAnswer', '') or '').strip()
+            is_correct = bool(raw.get('isCorrect', False))
+            if reference_answer and len(reference_answer) == 1:
+                is_correct = student_answer.upper() == reference_answer.upper()
+                score = max_question_score if is_correct else 0.0
+
+            # Match bounding box from local OCR
+            matched_idx = raw.get('matchedOcrIndex')
+            bbox = None
+            if matched_idx is not None and 0 <= int(matched_idx) < len(ocr_results):
+                bbox = ocr_results[int(matched_idx)]['boundingBox']
+            else:
+                # Simple fallback: look for string match in ocr_results
+                for r_item in ocr_results:
+                    if f"câu {question_num}" in r_item['text'].lower() or f"cau {question_num}" in r_item['text'].lower():
+                        bbox = r_item['boundingBox']
+                        break
+            
+            # Default fallback box if not found (divided evenly based on question number)
+            if not bbox:
+                ymin = int(100 + (question_num - 1) * (700 / max(1, question_count)))
+                bbox = [ymin, 80, ymin + 80, 920]
+
+            sanitized_results.append({
+                'questionNum': question_num,
+                'studentAnswer': student_answer,
+                'isCorrect': is_correct,
+                'score': score,
+                'maxScore': max_question_score,
+                'boundingBox': bbox,
+                'criterionAudit': [],
+                'feedback': str(raw.get('feedback', '') or 'Cần giáo viên kiểm tra lại.')
+            })
+
+        total_score = sum(r['score'] for r in sanitized_results)
+        max_score = sum(float(question_points.get(str(i), 1.0)) for i in expected_numbers)
+        confidence = max(0.0, min(1.0, float(result.get('confidence', 0.8) or 0.8)))
+
+        return {
+            'studentName': result.get('studentName'),
+            'studentId': result.get('studentId'),
+            'studentClass': result.get('studentClass'),
+            'results': sanitized_results,
+            'totalScore': total_score,
+            'maxScore': max_score,
+            'confidence': confidence
+        }
+
+    except Exception as e:
+        # Fallback to Vision grading if text-only fails or errors
+        return grade_submission_with_gemini(base64_image, mime_type, exam)
+
 # ==================== GEMINI RE-EVALUATE QUESTION ====================
+
 
 def evaluate_response(
     question_content: str,
