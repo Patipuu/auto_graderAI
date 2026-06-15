@@ -10,6 +10,34 @@ def calculate_submission_stats(results):
     total_score = sum(float(r.get('score', 0) or 0) for r in (results or []))
     return total_questions, correct_answers, total_score
 
+def is_teacher_approved(result):
+    return result.get('teacherApproved') in (True, 'true', 1, '1')
+
+def is_essay_answer_key(ans_key):
+    key = str(ans_key or '').strip()
+    return len(key) > 1 and key.upper() not in ('A', 'B', 'C', 'D')
+
+def result_needs_manual_review(result, submission):
+    if is_teacher_approved(result):
+        return False
+    score = float(result.get('score', 0) or 0)
+    max_score = float(result.get('maxScore', 1) or 1)
+    partial_score = 0 < score < max_score
+    low_confidence = float(submission.get('confidence', 1) or 1) < 0.85
+    return partial_score or low_confidence
+
+def _normalize_student_id(student_id):
+    return str(student_id or '').strip().lower()
+
+def _submission_brief(sub):
+    return {
+        'id': sub.get('id'),
+        'studentName': sub.get('studentName'),
+        'studentClass': sub.get('studentClass'),
+        'examTitle': sub.get('examTitle'),
+        'processedAt': sub.get('processedAt'),
+    }
+
 class SubmissionService:
     @staticmethod
     def get_submissions(student='', exam_title=''):
@@ -21,8 +49,99 @@ class SubmissionService:
         return submissions
 
     @staticmethod
+    def get_duplicate_student_ids():
+        submissions = SubmissionRepository.get_all()
+        groups = {}
+
+        for sub in submissions:
+            raw_id = (sub.get('studentId') or '').strip()
+            if not raw_id:
+                continue
+
+            key = _normalize_student_id(raw_id)
+            if key not in groups:
+                groups[key] = {
+                    'studentId': raw_id,
+                    'count': 0,
+                    'submissions': [],
+                }
+
+            groups[key]['count'] += 1
+            groups[key]['submissions'].append(_submission_brief(sub))
+
+        duplicates = [g for g in groups.values() if g['count'] > 1]
+        duplicates.sort(key=lambda x: (-x['count'], x['studentId']))
+        return duplicates
+
+    @staticmethod
+    def check_student_id(student_id, exclude_submission_id=None):
+        normalized = _normalize_student_id(student_id)
+        if not normalized:
+            return []
+
+        matches = []
+        for sub in SubmissionRepository.get_all():
+            if exclude_submission_id and str(sub.get('id')) == str(exclude_submission_id):
+                continue
+
+            other = (sub.get('studentId') or '').strip()
+            if other and _normalize_student_id(other) == normalized:
+                matches.append(_submission_brief(sub))
+
+        return matches
+
+    @staticmethod
     def get_submission(submission_id):
-        return SubmissionRepository.get_by_id(submission_id)
+        sub = SubmissionRepository.get_by_id(submission_id)
+        if not sub:
+            return None
+            
+        # Try to inject question content
+        from data_access.exam_repository import ExamRepository
+        from data_access.question_repository import QuestionRepository
+        
+        exam_id = sub.get('examId')
+        if exam_id:
+            exam = ExamRepository.get_by_id(exam_id)
+            if exam:
+                question_ids = exam.get('questionIds', [])
+                # Get actual questions
+                all_questions = QuestionRepository.get_all()
+                q_dict = {str(q['id']): q for q in all_questions}
+                
+                # Assume questionIds are ordered [q1, q2, ...]
+                ans_key = exam.get('answerKey', {})
+                for res in sub.get('results', []):
+                    q_num = res.get('questionNum')
+                    if q_num and isinstance(q_num, int) and 1 <= q_num <= len(question_ids):
+                        q_id = question_ids[q_num - 1]
+                        question = q_dict.get(str(q_id))
+                        if question:
+                            res['questionContent'] = question.get('content', '')
+                            
+                    res['referenceAnswer'] = ans_key.get(str(q_num), '')
+                    
+        return sub
+
+    @staticmethod
+    def _is_mshs_conflict(student_id, student_name, exclude_id=None):
+        if not student_id:
+            return False, None
+        normalized_id = _normalize_student_id(student_id)
+        if not normalized_id:
+            return False, None
+            
+        normalized_name = (student_name or '').strip().lower()
+        
+        for sub in SubmissionRepository.get_all():
+            if exclude_id and str(sub.get('id')) == str(exclude_id):
+                continue
+            other_id = _normalize_student_id(sub.get('studentId'))
+            if other_id == normalized_id:
+                other_name = (sub.get('studentName') or '').strip().lower()
+                if other_name != normalized_name:
+                    return True, sub.get('studentName') or 'Không tên'
+        return False, None
 
     @staticmethod
     def create_submission(data):
@@ -31,6 +150,10 @@ class SubmissionService:
             return None, "Missing required fields"
         if not isinstance(data['results'], list):
             return None, "results must be array"
+
+        conflict, other_name = SubmissionService._is_mshs_conflict(data.get('studentId'), data.get('studentName'))
+        if conflict:
+            return None, f"MSHS này đã được sử dụng bởi học sinh: {other_name}"
 
         total_questions, correct_answers, calculated_total = calculate_submission_stats(data['results'])
         calculated_max = sum(float(r.get('maxScore', 1) or 1) for r in data['results'])
@@ -68,6 +191,13 @@ class SubmissionService:
         if not sub:
             return None, "Submission not found"
 
+        student_id_to_check = data.get('studentId') if 'studentId' in data else sub.get('studentId')
+        student_name_to_check = data.get('studentName') if 'studentName' in data else sub.get('studentName')
+
+        conflict, other_name = SubmissionService._is_mshs_conflict(student_id_to_check, student_name_to_check, exclude_id=submission_id)
+        if conflict:
+            return None, f"MSHS này đã được sử dụng bởi học sinh: {other_name}"
+
         update_payload = {}
         if 'results' in data and isinstance(data['results'], list):
             update_payload['results'] = data['results']
@@ -98,3 +228,248 @@ class SubmissionService:
         if not deleted:
             return False, "Submission not found"
         return True, None
+
+    @staticmethod
+    def get_error_rate_stats():
+        from data_access.exam_repository import ExamRepository
+        submissions = SubmissionRepository.get_all()
+        exams = ExamRepository.get_all()
+        exam_dict = {str(e['id']): e for e in exams}
+
+        stats_map = {} # key: examId_questionNum
+        
+        for sub in submissions:
+            exam_id = str(sub.get('examId'))
+            results = sub.get('results', [])
+            
+            for res in results:
+                q_num = res.get('questionNum')
+                if not q_num: continue
+                
+                key = f"{exam_id}_{q_num}"
+                if key not in stats_map:
+                    exam = exam_dict.get(exam_id)
+                    q_type = 'unknown'
+                    exam_title = sub.get('examTitle', 'Unknown Exam')
+                    if exam:
+                        exam_title = exam.get('title', exam_title)
+                        # Determine type from answer key format
+                        ans = exam.get('answerKey', {}).get(str(q_num), '')
+                        if ans in ['A', 'B', 'C', 'D']:
+                            q_type = 'trac-nghiem'
+                        elif len(str(ans)) > 1:
+                            q_type = 'tu-luan'
+                            
+                    stats_map[key] = {
+                        'examId': exam_id,
+                        'examTitle': exam_title,
+                        'questionNum': q_num,
+                        'questionType': q_type,
+                        'totalSubmissions': 0,
+                        'incorrectCount': 0
+                    }
+                
+                stats_map[key]['totalSubmissions'] += 1
+                if not res.get('isCorrect'):
+                    stats_map[key]['incorrectCount'] += 1
+                    
+        stats_list = []
+        for v in stats_map.values():
+            if v['totalSubmissions'] > 0:
+                v['errorRate'] = round((v['incorrectCount'] / v['totalSubmissions']) * 100, 1)
+                stats_list.append(v)
+                
+        # Sort by error rate descending
+        stats_list.sort(key=lambda x: x['errorRate'], reverse=True)
+        return stats_list
+
+    @staticmethod
+    def _submission_still_needs_review(submission, exam_dict):
+        exam_id = str(submission.get('examId'))
+        exam = exam_dict.get(exam_id)
+        if not exam:
+            return False
+
+        for res in submission.get('results', []):
+            q_num = res.get('questionNum')
+            ans_key = exam.get('answerKey', {}).get(str(q_num), '')
+            if is_essay_answer_key(ans_key) and result_needs_manual_review(res, submission):
+                return True
+        return False
+
+    @staticmethod
+    def get_approve_queue():
+        from data_access.exam_repository import ExamRepository
+        submissions = SubmissionRepository.get_all()
+        exams = ExamRepository.get_all()
+        exam_dict = {str(e['id']): e for e in exams}
+        
+        queue = []
+        for sub in submissions:
+            exam_id = str(sub.get('examId'))
+            exam = exam_dict.get(exam_id)
+            if not exam:
+                continue
+            
+            for res in sub.get('results', []):
+                q_num = res.get('questionNum')
+                ans_key = exam.get('answerKey', {}).get(str(q_num), '')
+                if not is_essay_answer_key(ans_key):
+                    continue
+                if not result_needs_manual_review(res, sub):
+                    continue
+
+                queue.append({
+                    'submissionId': sub['id'],
+                    'studentName': sub.get('studentName', 'Unknown'),
+                    'studentClass': sub.get('studentClass', ''),
+                    'examTitle': sub.get('examTitle', ''),
+                    'questionNum': q_num,
+                    'studentAnswer': res.get('studentAnswer', ''),
+                    'suggestedScore': res.get('score', 0),
+                    'maxScore': res.get('maxScore', 1),
+                    'feedback': res.get('feedback', ''),
+                    'referenceAnswer': str(ans_key)
+                })
+        return queue
+
+    @staticmethod
+    def approve_queue_item(submission_id, question_num, score):
+        from data_access.exam_repository import ExamRepository
+
+        sub = SubmissionRepository.get_by_id(submission_id)
+        if not sub:
+            return None, 'Submission not found'
+
+        target_q = str(question_num)
+        updated_results = []
+        matched = False
+
+        for res in sub.get('results', []):
+            if str(res.get('questionNum')) == target_q:
+                matched = True
+                approved_score = float(score)
+                max_score = float(res.get('maxScore', 1) or 1)
+                updated_results.append({
+                    **res,
+                    'score': approved_score,
+                    'teacherApproved': True,
+                    'teacherApprovedAt': now_iso(),
+                    'isCorrect': approved_score >= max_score,
+                })
+            else:
+                updated_results.append(res)
+
+        if not matched:
+            return None, f'Question {question_num} not found in submission'
+
+        total_questions, correct_answers, total_score = calculate_submission_stats(updated_results)
+        exams = ExamRepository.get_all()
+        exam_dict = {str(e['id']): e for e in exams}
+        pending_submission = {**sub, 'results': updated_results}
+
+        update_payload = {
+            'results': updated_results,
+            'totalQuestions': total_questions,
+            'correctAnswers': correct_answers,
+            'totalScore': total_score,
+            'maxScore': sum(float(r.get('maxScore', 1) or 1) for r in updated_results),
+            'requiresManualReview': SubmissionService._submission_still_needs_review(pending_submission, exam_dict),
+            'finalizedAt': now_iso(),
+        }
+
+        updated = SubmissionRepository.update(submission_id, update_payload)
+        return updated, None
+
+    @staticmethod
+    def apply_grading_rule(exam_id, question_num, student_answer, new_score, feedback=None):
+        submissions = SubmissionRepository.get_all()
+        updated_count = 0
+        
+        for sub in submissions:
+            if str(sub.get('examId')) != str(exam_id): continue
+            
+            needs_update = False
+            for res in sub.get('results', []):
+                if str(res.get('questionNum')) == str(question_num):
+                    # Simple similarity check
+                    if res.get('studentAnswer', '').strip().lower() == student_answer.strip().lower():
+                        res['score'] = float(new_score)
+                        if feedback:
+                            res['feedback'] = feedback
+                        needs_update = True
+                        updated_count += 1
+                        
+            if needs_update:
+                total_questions, correct_answers, total_score = calculate_submission_stats(sub['results'])
+                update_payload = {
+                    'results': sub['results'],
+                    'totalQuestions': total_questions,
+                    'correctAnswers': correct_answers,
+                    'totalScore': total_score,
+                    'finalizedAt': now_iso()
+                }
+                SubmissionRepository.update(sub['id'], update_payload)
+                
+        return updated_count
+
+    @staticmethod
+    def get_student_profiles():
+        submissions = SubmissionRepository.get_all()
+        profiles = {}
+        
+        for sub in submissions:
+            mshs = _normalize_student_id(sub.get('studentId'))
+            name = (sub.get('studentName') or '').strip()
+            if not mshs:
+                if not name:
+                    continue
+                key = f"name_{name.lower()}"
+            else:
+                key = f"mshs_{mshs}"
+                
+            if key not in profiles:
+                profiles[key] = {
+                    'studentId': sub.get('studentId') or '',
+                    'studentName': name,
+                    'studentClass': sub.get('studentClass') or '',
+                    'exams': [],
+                    'averageScore': 0,
+                    'academicPerformance': 'Yếu'
+                }
+                
+            profiles[key]['exams'].append({
+                'examId': sub.get('examId'),
+                'examTitle': sub.get('examTitle'),
+                'totalScore': float(sub.get('totalScore') or 0),
+                'processedAt': sub.get('processedAt')
+            })
+            
+            if sub.get('studentClass'):
+                profiles[key]['studentClass'] = sub.get('studentClass')
+                
+            if not profiles[key]['studentName'] and name:
+                profiles[key]['studentName'] = name
+                
+        result_list = []
+        for p in profiles.values():
+            exams = p['exams']
+            if not exams:
+                continue
+            avg_score = sum(e['totalScore'] for e in exams) / len(exams)
+            p['averageScore'] = round(avg_score, 2)
+            
+            if avg_score >= 8.0:
+                p['academicPerformance'] = 'Giỏi'
+            elif avg_score >= 6.5:
+                p['academicPerformance'] = 'Khá'
+            elif avg_score >= 5.0:
+                p['academicPerformance'] = 'Trung bình'
+            else:
+                p['academicPerformance'] = 'Yếu'
+                
+            result_list.append(p)
+            
+        # Sort by name as default
+        result_list.sort(key=lambda x: x['studentName'].lower())
+        return result_list
