@@ -17,9 +17,14 @@ def save_base64_image(base64_str: str, prefix: str) -> str:
         return base64_str
 
     try:
+        ext = "jpg"
         # Strip data URI header if present
         if ',' in base64_str:
             header, base64_str = base64_str.split(',', 1)
+            if "application/pdf" in header.lower():
+                ext = "pdf"
+            elif "image/png" in header.lower():
+                ext = "png"
             
         # Decode data
         img_data = base64.b64decode(base64_str)
@@ -29,7 +34,7 @@ def save_base64_image(base64_str: str, prefix: str) -> str:
         os.makedirs(uploads_dir, exist_ok=True)
         
         # Generate unique filename
-        filename = f"{prefix}_{uuid.uuid4().hex}.jpg"
+        filename = f"{prefix}_{uuid.uuid4().hex}.{ext}"
         filepath = os.path.join(uploads_dir, filename)
         
         with open(filepath, 'wb') as f:

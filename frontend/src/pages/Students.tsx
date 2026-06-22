@@ -69,7 +69,7 @@ export default function Students() {
 
   const classes = useMemo(() => {
     const cls = new Set(students.map(s => s.studentClass).filter(Boolean));
-    return Array.from(cls).sort();
+    return Array.from(cls).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [students]);
 
   const performances = useMemo(() => {
@@ -84,8 +84,8 @@ export default function Students() {
     result.sort((a, b) => {
       const classA = a.studentClass || '';
       const classB = b.studentClass || '';
-      if (classA !== classB) return classA.localeCompare(classB);
-      return (a.studentName || '').localeCompare(b.studentName || '');
+      if (classA !== classB) return classA.localeCompare(classB, undefined, { numeric: true, sensitivity: 'base' });
+      return (a.studentName || '').localeCompare(b.studentName || '', undefined, { numeric: true, sensitivity: 'base' });
     });
 
     // Lọc dữ liệu
