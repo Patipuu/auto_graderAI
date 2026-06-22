@@ -19,38 +19,61 @@ export default function Dashboard() {
     submissions: Array<{ id: string; studentName?: string; examTitle?: string; studentClass?: string }>;
   }>>([]);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [examsRes, subRes, dupRes] = await Promise.all([
-          fetch('/api/exams'),
-          fetch('/api/submissions'),
-          fetch('/api/submissions/duplicates/student-ids'),
-        ]);
-        const exams = await examsRes.json();
-        const submissions = await subRes.json();
-        if (dupRes.ok) {
-          const dupData = await dupRes.json();
-          setDuplicateStudentIds(dupData.duplicates || []);
-        }
-        
-        const totalExams = exams.length;
-        const totalSubmissions = submissions.length;
-        const avgScore = totalSubmissions > 0 
-          ? submissions.reduce((acc: number, s: any) => acc + s.totalScore, 0) / totalSubmissions 
-          : 0;
-
-        const needsReview = submissions.filter((s: any) => s.requiresManualReview).length;
-        const sortedSubmissions = [...submissions].sort((a: any, b: any) => new Date(b.processedAt || 0).getTime() - new Date(a.processedAt || 0).getTime());
-        const latestSubmission = sortedSubmissions[0] || null;
-
-        setStats({ totalExams, totalSubmissions, avgScore, needsReview, latestSubmission });
-      } catch (err) {
-        console.error(err);
+  const fetchData = async () => {
+    try {
+      const [examsRes, subRes, dupRes] = await Promise.all([
+        fetch('/api/exams'),
+        fetch('/api/submissions'),
+        fetch('/api/submissions/duplicates/student-ids'),
+      ]);
+      const exams = await examsRes.json();
+      const submissions = await subRes.json();
+      if (dupRes.ok) {
+        const dupData = await dupRes.json();
+        setDuplicateStudentIds(dupData.duplicates || []);
       }
-    };
+      
+      const totalExams = exams.length;
+      const totalSubmissions = submissions.length;
+      const avgScore = totalSubmissions > 0 
+        ? submissions.reduce((acc: number, s: any) => acc + s.totalScore, 0) / totalSubmissions 
+        : 0;
+
+      const needsReview = submissions.filter((s: any) => s.requiresManualReview).length;
+      const sortedSubmissions = [...submissions].sort((a: any, b: any) => new Date(b.processedAt || 0).getTime() - new Date(a.processedAt || 0).getTime());
+      const latestSubmission = sortedSubmissions[0] || null;
+
+      setStats({ totalExams, totalSubmissions, avgScore, needsReview, latestSubmission });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, []);
+
+  const handleConfirmStudent = async (studentId: string) => {
+    if (!confirm(`Bạn có chắc chắn xác nhận các bài làm có MSHS ${studentId} đều của cùng 1 học sinh?`)) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/submissions/duplicates/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentId })
+      });
+      if (res.ok) {
+        fetchData();
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Có lỗi xảy ra khi xác nhận.');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Không thể kết nối đến máy chủ.');
+    }
+  };
 
   const container = {
     hidden: { opacity: 0 },
@@ -128,9 +151,19 @@ export default function Dashboard() {
               <div key={group.studentId} className="rounded-xl border border-amber-200 bg-white p-3">
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <span className="text-xs font-black font-mono text-amber-900">{group.studentId}</span>
-                  <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                    {group.count} bài làm
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                      {group.count} bài làm
+                    </span>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="h-6 text-[10px] px-2 py-0 border-amber-300 text-amber-700 hover:bg-amber-100 hover:text-amber-800"
+                      onClick={() => handleConfirmStudent(group.studentId)}
+                    >
+                      Xác nhận cùng 1 HS
+                    </Button>
+                  </div>
                 </div>
                 <ul className="space-y-1">
                   {group.submissions.map((sub) => (

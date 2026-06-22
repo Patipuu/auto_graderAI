@@ -103,14 +103,33 @@ class SubmissionService:
                     'studentId': raw_id,
                     'count': 0,
                     'submissions': [],
+                    'all_confirmed': True
                 }
 
             groups[key]['count'] += 1
             groups[key]['submissions'].append(_submission_brief(sub))
+            if not sub.get('isStudentConfirmed'):
+                groups[key]['all_confirmed'] = False
 
-        duplicates = [g for g in groups.values() if g['count'] > 1]
+        duplicates = [g for g in groups.values() if g['count'] > 1 and not g['all_confirmed']]
         duplicates.sort(key=lambda x: (-x['count'], x['studentId']))
         return duplicates
+
+    @staticmethod
+    def confirm_student_id(student_id):
+        normalized = _normalize_student_id(student_id)
+        if not normalized:
+            return 0
+
+        submissions = SubmissionRepository.get_all()
+        updated_count = 0
+        for sub in submissions:
+            if _normalize_student_id(sub.get('studentId')) == normalized:
+                # Set isStudentConfirmed to True
+                update_payload = {'isStudentConfirmed': True}
+                SubmissionRepository.update(sub['id'], update_payload)
+                updated_count += 1
+        return updated_count
 
     @staticmethod
     def check_student_id(student_id, exclude_submission_id=None):
