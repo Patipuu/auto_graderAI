@@ -1,5 +1,44 @@
+import os
+import base64
+import uuid
 from datetime import datetime
 from data_access.submission_repository import SubmissionRepository
+
+def save_base64_image(base64_str: str, prefix: str) -> str:
+    """
+    Decodes a base64 image string and saves it to the static/uploads directory.
+    Returns the relative URL path to the saved image.
+    """
+    if not base64_str:
+        return ""
+    
+    # If it is already a URL (e.g., starts with '/static/'), return it
+    if base64_str.startswith('/static/'):
+        return base64_str
+
+    try:
+        # Strip data URI header if present
+        if ',' in base64_str:
+            header, base64_str = base64_str.split(',', 1)
+            
+        # Decode data
+        img_data = base64.b64decode(base64_str)
+        
+        # Ensure uploads folder exists
+        uploads_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'static', 'uploads')
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Generate unique filename
+        filename = f"{prefix}_{uuid.uuid4().hex}.jpg"
+        filepath = os.path.join(uploads_dir, filename)
+        
+        with open(filepath, 'wb') as f:
+            f.write(img_data)
+            
+        return f"/static/uploads/{filename}"
+    except Exception as e:
+        print(f"Error saving base64 image: {e}")
+        return ""
 
 def now_iso():
     return datetime.now().isoformat()
@@ -159,6 +198,25 @@ class SubmissionService:
         calculated_max = sum(float(r.get('maxScore', 1) or 1) for r in data['results'])
         total_score = float(data.get('totalScore', calculated_total))
 
+        # Save markedImage to disk if it exists
+        marked_image_url = ""
+        raw_marked = data.get('markedImage')
+        if raw_marked:
+            marked_image_url = save_base64_image(raw_marked, "marked")
+            
+        # Save studentImage(s) to disk if they exist
+        student_images_urls = []
+        raw_student = data.get('studentImage')
+        if isinstance(raw_student, list):
+            for idx, img in enumerate(raw_student):
+                url = save_base64_image(img, f"student_page_{idx}")
+                if url:
+                    student_images_urls.append(url)
+        elif isinstance(raw_student, str) and raw_student:
+            url = save_base64_image(raw_student, "student")
+            if url:
+                student_images_urls = [url]
+
         new_submission = {
             'id': str(int(datetime.now().timestamp() * 1000)),
             'examId': data['examId'],
@@ -175,8 +233,8 @@ class SubmissionService:
             'requiresManualReview': bool(data.get('requiresManualReview', False)),
             'aiStatus': data.get('aiStatus', 'completed'),
             'fileType': data.get('fileType'),
-            'markedImage': data.get('markedImage'),
-            'studentImage': data.get('studentImage'),
+            'markedImage': marked_image_url or None,
+            'studentImage': student_images_urls if isinstance(raw_student, list) else (student_images_urls[0] if student_images_urls else None),
             'gradingType': data.get('gradingType'),
             'processedAt': now_iso(),
             'gradedAt': now_iso()

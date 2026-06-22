@@ -10,7 +10,7 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv, dotenv_values
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Union
 
 load_dotenv()
 _env_file = dotenv_values()
@@ -107,32 +107,23 @@ def format_rubric_groups_for_prompt(rubric_groups: Dict[str, Any]) -> str:
 
 # ==================== GEMINI GRADE SUBMISSION ====================
 
-def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[str, Any]) -> Dict[str, Any]:
+def grade_submission_with_gemini(
+    base64_image: Union[str, List[str]],
+    mime_type: Union[str, List[str]],
+    exam: Dict[str, Any]
+) -> Dict[str, Any]:
     """
-    Process exam image via Gemini OCR + grading
-    
-    Args:
-        base64_image: Base64 encoded image data
-        mime_type: Image MIME type (e.g., "image/jpeg")
-        exam: Exam object with title, subject, answerKey, questionIds
-    
-    Returns:
-        {
-            "studentName": str,
-            "studentId": str|null,
-            "results": [{
-                "questionNum": int,
-                "studentAnswer": str,
-                "isCorrect": bool,
-                "score": float (0-1),
-                "feedback": str
-            }],
-            "totalScore": float,
-            "confidence": float (0-1)
-        }
+    Process exam image(s) via Gemini OCR + grading
     """
     if not client:
         raise Exception("Gemini API key not configured")
+
+    if isinstance(base64_image, str):
+        base64_images = [base64_image]
+        mime_types = [mime_type]
+    else:
+        base64_images = base64_image
+        mime_types = mime_type
 
     answer_key = {str(k): v for k, v in exam.get('answerKey', {}).items()}
     question_count = int(exam.get('questionCount') or len(answer_key) or 0)
@@ -145,6 +136,11 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
 
     prompt = f"""
     Bạn là một trợ lý giáo vụ AI chuyên chấm điểm bài thi.
+    
+    CẢNH BÁO QUAN TRỌNG VỀ SỰ TRUNG THỰC:
+    - KHÔNG ĐƯỢC TỰ Ý "SỬA", "TRÁM" HOẶC "HOÀN THIỆN" CÂU TRẢ LỜI CỦA HỌC SINH dựa theo đáp án đúng của đề thi.
+    - Học sinh ghi gì trên ảnh bài làm, bạn phải trích xuất chính xác như vậy vào trường `studentAnswer` (ví dụ học sinh viết sai "Mỹ đầu hàng" thì bắt buộc phải ghi lại là "Mỹ đầu hàng", tuyệt đối không được tự ý sửa thành "Nhật đầu hàng" trong kết quả phản hồi chỉ vì đáp án đúng của đề thi là như vậy).
+    - Phải đánh giá đúng thực chất lỗi sai của học sinh và cho điểm 0 hoặc trừ điểm tương ứng nếu học sinh viết sai thông tin kiến thức, kể cả khi lỗi sai đó chỉ khác biệt một vài từ quan trọng so với đáp án mẫu.
     
     Thông tin đề thi:
     - Tên đề: {exam.get('title', 'Unknown')}
@@ -214,19 +210,20 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
     """
 
     try:
+        parts = [{"text": prompt}]
+        for img, mime in zip(base64_images, mime_types):
+            parts.append({
+                "inline_data": {
+                    "mime_type": mime,
+                    "data": img
+                }
+            })
+
         response = generate_content_with_fallback(
             contents=[
                 {
                     "role": "user",
-                    "parts": [
-                        {"text": prompt},
-                        {
-                            "inline_data": {
-                                "mime_type": mime_type,
-                                "data": base64_image
-                            }
-                        }
-                    ]
+                    "parts": parts
                 }
             ],
             config=types.GenerateContentConfig(
@@ -310,18 +307,36 @@ def grade_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[s
 
 # ==================== GEMINI HYBRID GRADE SUBMISSION ====================
 
-def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam: Dict[str, Any]) -> Dict[str, Any]:
+def grade_hybrid_submission_with_gemini(
+    base64_image: Union[str, List[str]],
+    mime_type: Union[str, List[str]],
+    exam: Dict[str, Any]
+) -> Dict[str, Any]:
     """
     Process hybrid exam via local OCR text extraction + Gemini text-based grading
     and maps the local OCR bounding boxes to the graded questions.
     """
     from services.local_ocr_service import perform_local_ocr
     
-    # 1. Run local OCR to get text segments & bounding boxes
-    ocr_results = perform_local_ocr(base64_image, mime_type)
+    if isinstance(base64_image, str):
+        base64_images = [base64_image]
+        mime_types = [mime_type]
+    else:
+        base64_images = base64_image
+        mime_types = mime_type
+
+    # 1. Run local OCR to get text segments & bounding boxes on each page and combine them
+    ocr_results = []
+    for page_idx, (img, mime) in enumerate(zip(base64_images, mime_types)):
+        page_ocr = perform_local_ocr(img, mime)
+        if page_ocr:
+            for item in page_ocr:
+                item['pageIndex'] = page_idx
+            ocr_results.extend(page_ocr)
+
     if not ocr_results:
         # Fallback to full image Vision grading if OCR fails
-        return grade_submission_with_gemini(base64_image, mime_type, exam)
+        return grade_submission_with_gemini(base64_images, mime_types, exam)
 
     # 2. Combine OCR texts with index labels
     ocr_lines_str = ""
@@ -338,7 +353,24 @@ def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam:
         question_points = {str(i): 1.0 for i in range(1, question_count + 1)}
 
     prompt = f"""
-    Bạn là một trợ lý giáo vụ AI chuyên chấm điểm bài thi dựa trên kết quả trích xuất văn bản (Text) từ bài làm của học sinh.
+    Bạn là một trợ lý giáo vụ AI chuyên chấm điểm bài thi tự luận bằng cách kết hợp việc ĐỌC CHỮ VIẾT TAY TRÊN HÌNH ẢNH và ĐỐI CHIẾU với văn bản OCR thô được cung cấp dưới đây.
+    
+    CẢNH BÁO QUAN TRỌNG VỀ SỰ TRUNG THỰC:
+    - TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ Ý "SỬA", "TRÁM" HOẶC "HOÀN THIỆN" CÂU TRẢ LỜI CỦA HỌC SINH dựa theo đáp án mẫu/rubric.
+    - Học sinh viết sai gì, bạn bắt buộc phải ghi nhận chính xác lỗi sai đó vào trường `studentAnswer` (ví dụ học sinh viết sai "Mỹ đầu hàng" thì bắt buộc phải ghi lại đúng là "Mỹ đầu hàng", tuyệt đối không được tự ý điền là "Nhật đầu hàng" chỉ vì đáp án đúng của đề thi ghi như vậy).
+    - Phải chấm điểm khách quan, trừ điểm hoặc cho điểm 0 đối với các thông tin sai kiến thức lịch sử/toán học/văn học tương ứng theo Rubric.
+
+    CẤU TRÚC NHẬN XÉT (FEEDBACK) BẮT BUỘC:
+    Nhận xét (trường `feedback`) của mỗi câu phải được trình bày chi tiết theo cấu trúc phân tích dòng (sử dụng ký tự xuống dòng `\n` để phân tách các ý):
+    - Đạt được: [Nội dung ý học sinh làm đúng] (+[số điểm]đ)
+    - Thiếu/Sai: [Nội dung ý học sinh làm sai hoặc thiếu] (-[số điểm]đ)
+    Ví dụ:
+    "- Đạt được: Nêu đúng nguyên nhân chủ quan là lòng yêu nước (+0.5đ)\n- Thiếu/Sai: Sai nghiêm trọng nguyên nhân khách quan khi ghi Mỹ đầu hàng thay vì Nhật đầu hàng (-1.0đ)"
+
+    HƯỚNG DẪN ĐỌC HÌNH ẢNH VÀ ĐỐI CHIẾU OCR:
+    1. Bạn được cung cấp cả hình ảnh bài thi thực tế của học sinh (đính kèm dưới dạng các phần hình ảnh của request) và văn bản OCR thô trích xuất từ bài làm học sinh kèm chỉ số dòng [idx] ở bên dưới.
+    2. Hãy nhìn trực tiếp vào HÌNH ẢNH để đọc câu trả lời thực tế của học sinh với ngôn ngữ tự nhiên chuẩn xác, dễ đọc nhất. Hãy loại bỏ hoàn toàn các lỗi chính tả nhận diện sai ký tự lạ từ OCR thô (ví dụ: tránh ghi lại các ký tự rác như "[-an ta", "Ahonh", "Co Y",... mà hãy khôi phục lại câu gốc dựa trên hình ảnh thực tế như "Hội nghị Ianta", "quân đội",...).
+    3. Tuy nhiên, nội dung câu trả lời được đọc từ hình ảnh phải được đối chiếu vị trí với các dòng văn bản OCR thô bên dưới để chỉ ra mảng chứa tất cả các chỉ số dòng `matchedOcrIndices` (ví dụ: `[0, 1, 2]`) tương ứng với toàn bộ các phần nội dung bài làm của câu đó.
     
     Thông tin đề thi:
     - Tên đề: {exam.get('title', 'Unknown')}
@@ -352,9 +384,9 @@ def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam:
     
     Hãy thực hiện các bước sau:
     1. Trích xuất Tên học sinh, Mã học sinh, Lớp học từ các dòng text.
-    2. Xác định câu trả lời của học sinh cho từng câu hỏi bằng cách phân tích nội dung các dòng text.
+    2. Xác định câu trả lời của học sinh cho từng câu hỏi bằng cách phân tích hình ảnh và đối chiếu văn bản OCR.
     3. Chấm điểm theo thang điểm tối đa từng câu và Rubric. Chỉ dùng bước nhảy 0.25 điểm.
-    4. Đối với mỗi câu hỏi, hãy chỉ ra chỉ số dòng `matchedOcrIndex` (số từ 0 đến {len(ocr_results) - 1}) tương ứng với phần nội dung bài làm của câu đó.
+    4. Đối với mỗi câu hỏi, hãy chỉ ra danh sách chứa tất cả chỉ số dòng `matchedOcrIndices` tương ứng.
     
     Trả về JSON với cấu trúc chính xác sau (KHÔNG có text khác):
     {{
@@ -364,11 +396,11 @@ def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam:
         "results": [
             {{
                 "questionNum": 1,
-                "studentAnswer": "Nội dung học sinh viết",
+                "studentAnswer": "Nội dung câu trả lời sạch đã đọc từ ảnh",
                 "isCorrect": true/false,
                 "score": 1.0,
-                "feedback": "Nhận xét ngắn gọn",
-                "matchedOcrIndex": 0
+                "feedback": "- Đạt được: ... (+0.5đ)\\n- Thiếu/Sai: ... (-0.5đ)",
+                "matchedOcrIndices": [0, 1, 2]
             }}
         ],
         "totalScore": 8.5,
@@ -380,8 +412,22 @@ def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam:
         raise Exception("Gemini API key not configured")
 
     try:
+        parts = [{"text": prompt}]
+        for img, mime in zip(base64_images, mime_types):
+            parts.append({
+                "inline_data": {
+                    "mime_type": mime,
+                    "data": img
+                }
+            })
+
         response = generate_content_with_fallback(
-            contents=[{"role": "user", "parts": [{"text": prompt}]}],
+            contents=[
+                {
+                    "role": "user",
+                    "parts": parts
+                }
+            ],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.1
@@ -416,21 +462,51 @@ def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam:
                 score = max_question_score if is_correct else 0.0
 
             # Match bounding box from local OCR
-            matched_idx = raw.get('matchedOcrIndex')
+            matched_indices = raw.get('matchedOcrIndices') or []
+            if raw.get('matchedOcrIndex') is not None and not matched_indices:
+                matched_indices = [raw.get('matchedOcrIndex')]
+            
+            bboxes = []
+            page_idx = 0
+            
+            if isinstance(matched_indices, list):
+                for idx_val in matched_indices:
+                    try:
+                        idx_val = int(idx_val)
+                        if 0 <= idx_val < len(ocr_results):
+                            bboxes.append(ocr_results[idx_val]['boundingBox'])
+                            page_idx = ocr_results[idx_val].get('pageIndex', 0)
+                    except (ValueError, TypeError):
+                        continue
+            elif isinstance(matched_indices, int) or str(matched_indices).isdigit():
+                try:
+                    idx_val = int(matched_indices)
+                    if 0 <= idx_val < len(ocr_results):
+                        bboxes.append(ocr_results[idx_val]['boundingBox'])
+                        page_idx = ocr_results[idx_val].get('pageIndex', 0)
+                except (ValueError, TypeError):
+                    pass
+
             bbox = None
-            if matched_idx is not None and 0 <= int(matched_idx) < len(ocr_results):
-                bbox = ocr_results[int(matched_idx)]['boundingBox']
+            if bboxes:
+                ymin = min(b[0] for b in bboxes)
+                xmin = min(b[1] for b in bboxes)
+                ymax = max(b[2] for b in bboxes)
+                xmax = max(b[3] for b in bboxes)
+                bbox = [ymin, xmin, ymax, xmax]
             else:
                 # Simple fallback: look for string match in ocr_results
                 for r_item in ocr_results:
                     if f"câu {question_num}" in r_item['text'].lower() or f"cau {question_num}" in r_item['text'].lower():
                         bbox = r_item['boundingBox']
+                        page_idx = r_item.get('pageIndex', 0)
                         break
-            
+
             # Default fallback box if not found (divided evenly based on question number)
             if not bbox:
                 ymin = int(100 + (question_num - 1) * (700 / max(1, question_count)))
                 bbox = [ymin, 80, ymin + 80, 920]
+                page_idx = 0
 
             sanitized_results.append({
                 'questionNum': question_num,
@@ -439,6 +515,7 @@ def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam:
                 'score': score,
                 'maxScore': max_question_score,
                 'boundingBox': bbox,
+                'pageIndex': page_idx,
                 'criterionAudit': [],
                 'feedback': str(raw.get('feedback', '') or 'Cần giáo viên kiểm tra lại.')
             })
@@ -459,7 +536,7 @@ def grade_hybrid_submission_with_gemini(base64_image: str, mime_type: str, exam:
 
     except Exception as e:
         # Fallback to Vision grading if text-only fails or errors
-        return grade_submission_with_gemini(base64_image, mime_type, exam)
+        return grade_submission_with_gemini(base64_images, mime_types, exam)
 
 # ==================== GEMINI RE-EVALUATE QUESTION ====================
 

@@ -15,28 +15,38 @@ def grade_submission():
     from services.omr_service import grade_bubble_sheet
 
     data = request.json or {}
-    required = ['base64Image', 'mimeType', 'examId']
+    exam_id = data.get('examId')
+    if not exam_id:
+        return jsonify({'success': False, 'message': 'Missing examId'}), 400
 
-    if not all(k in data for k in required):
-        return jsonify({'success': False, 'message': 'Missing required fields'}), 400
-
-    exam = ExamRepository.get_by_id(data['examId'])
+    exam = ExamRepository.get_by_id(exam_id)
     if not exam:
         return jsonify({'success': False, 'message': 'Exam not found'}), 404
+
+    # Extract single or multiple images
+    if 'base64Images' in data:
+        base64_images = data['base64Images']
+        mime_types = data.get('mimeTypes') or [data.get('mimeType') or 'image/jpeg'] * len(base64_images)
+    else:
+        if 'base64Image' not in data or 'mimeType' not in data:
+            return jsonify({'success': False, 'message': 'Missing base64Image or mimeType'}), 400
+        base64_images = [data['base64Image']]
+        mime_types = [data['mimeType']]
 
     grading_type = data.get('gradingType') or exam.get('gradingType') or 'HYBRID'
 
     try:
         if grading_type == 'OMR':
+            # OMR sheet is always on the first page
             result = grade_bubble_sheet(
-                base64_image=data['base64Image'],
-                mime_type=data['mimeType'],
+                base64_image=base64_images[0],
+                mime_type=mime_types[0],
                 exam=exam
             )
         else:
             result = grade_hybrid_submission_with_gemini(
-                base64_image=data['base64Image'],
-                mime_type=data['mimeType'],
+                base64_image=base64_images,
+                mime_type=mime_types,
                 exam=exam
             )
         return jsonify(result), 200

@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { Upload, FileUp, CheckCircle2, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { Upload, FileUp, CheckCircle2, Loader2, Sparkles, AlertCircle, Plus, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { aiGradingService } from '@/services/aiGradingService';
 
@@ -13,7 +13,7 @@ export default function SubmissionUpload() {
   const navigate = useNavigate();
   const [exams, setExams] = useState<any[]>([]);
   const [selectedExamId, setSelectedExamId] = useState<string>('');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -22,35 +22,89 @@ export default function SubmissionUpload() {
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+    if (e.target.files) {
+      const selected = Array.from(e.target.files);
+      setFiles(prev => [...prev, ...selected]);
     }
   };
 
   const handleUpload = async () => {
-    if (!file || !selectedExamId) {
-      toast.error('Vui lòng chọn đề thi và tệp tin bài làm');
+    if (files.length === 0 || !selectedExamId) {
+      toast.error('Vui lòng chọn đề thi và tải lên ít nhất một ảnh bài làm');
       return;
     }
 
     const exam = exams.find(e => e.id === selectedExamId);
     setIsProcessing(true);
-    setProgress(20);
+    setProgress(15);
 
     let progressInterval: NodeJS.Timeout | null = null;
 
     try {
-      // Step 1: Read file to base64
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onload = () => {
-          const base64 = (reader.result as string).split(',')[1];
-          resolve(base64);
-        };
-        reader.readAsDataURL(file);
-      });
-      const base64 = await base64Promise;
-      setProgress(40);
+      // Step 1: Read all files to base64 in parallel and compress images
+      const compressAndRead = (f: File, maxW = 2000, maxH = 2000, quality = 0.9): Promise<{ base64: string; type: string; name: string }> => {
+        return new Promise((resolve) => {
+          if (f.type === 'application/pdf') {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve({ base64, type: f.type, name: f.name });
+            };
+            reader.readAsDataURL(f);
+            return;
+          }
+
+          const img = new Image();
+          img.src = URL.createObjectURL(f);
+          img.onload = () => {
+            URL.revokeObjectURL(img.src);
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxW || height > maxH) {
+              if (width > height) {
+                height = Math.round((height * maxW) / width);
+                width = maxW;
+              } else {
+                width = Math.round((width * maxH) / height);
+                height = maxH;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              const dataUrl = canvas.toDataURL('image/jpeg', quality);
+              const base64 = dataUrl.split(',')[1];
+              resolve({ base64, type: 'image/jpeg', name: f.name });
+            } else {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const base64 = (reader.result as string).split(',')[1];
+                resolve({ base64, type: f.type || 'image/jpeg', name: f.name });
+              };
+              reader.readAsDataURL(f);
+            }
+          };
+          img.onerror = () => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const base64 = (reader.result as string).split(',')[1];
+              resolve({ base64, type: f.type || 'image/jpeg', name: f.name });
+            };
+            reader.readAsDataURL(f);
+          };
+        });
+      };
+
+      toast.info(`Đang nén và chuyển đổi ${files.length} trang bài làm...`);
+      const filePayloads = await Promise.all(files.map(f => compressAndRead(f)));
+      const base64Images = filePayloads.map(fp => fp.base64);
+      const mimeTypes = filePayloads.map(fp => fp.type);
+      setProgress(35);
 
       // Simulate progress during AI processing
       progressInterval = setInterval(() => {
@@ -62,16 +116,23 @@ export default function SubmissionUpload() {
           const increment = Math.max(1, (95 - prev) * 0.05);
           return Math.min(95, prev + increment);
         });
-      }, 1000);
+      }, 1200);
 
-      // Step 2: AI Processing
-      toast.info('Đang gửi bài cho AI xử lý...');
-      const aiResult = await aiGradingService.gradeSubmission(base64, file.type || 'image/jpeg', selectedExamId, exam.gradingType);
+      // Step 2: AI Processing (Sends list of images)
+      toast.info('Gemini AI đang chấm bài (đọc tất cả các trang)...');
+      const aiResult = await aiGradingService.gradeSubmission(
+        base64Images,
+        mimeTypes,
+        selectedExamId,
+        exam.gradingType
+      );
 
       if (progressInterval) clearInterval(progressInterval);
       setProgress(95);
 
       // Step 3: Save to local DB via API
+      const studentImages = filePayloads.map(fp => `data:${fp.type};base64,${fp.base64}`);
+      
       const saveRes = await fetch('/api/submissions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -79,9 +140,9 @@ export default function SubmissionUpload() {
           examId: selectedExamId,
           examTitle: exam.title,
           ...aiResult,
-          studentImage: `data:${file.type};base64,${base64}`,
+          studentImage: studentImages, // Array of base64 images
           gradingType: exam.gradingType || 'HYBRID',
-          fileType: file.type
+          fileType: files[0].type || 'image/jpeg'
         })
       });
 
@@ -143,8 +204,12 @@ export default function SubmissionUpload() {
               <div className="space-y-2">
                 <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Bước 2: Tải tệp bài làm</Label>
                 <div
-                  className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all cursor-pointer group ${file ? 'border-green-200 bg-green-50/20' : 'border-slate-200 bg-slate-50/50 hover:border-blue-300 hover:bg-slate-50'}`}
-                  onClick={() => document.getElementById('file-upload')?.click()}
+                  className={`border-2 border-dashed rounded-2xl transition-all ${
+                    files.length > 0
+                      ? 'border-blue-200 bg-blue-50/5 p-6'
+                      : 'border-slate-200 bg-slate-50/50 hover:border-blue-300 hover:bg-slate-50 p-12 text-center cursor-pointer'
+                  }`}
+                  onClick={files.length > 0 ? undefined : () => document.getElementById('file-upload')?.click()}
                 >
                   <input
                     id="file-upload"
@@ -152,18 +217,58 @@ export default function SubmissionUpload() {
                     className="hidden"
                     accept="image/*,application/pdf"
                     onChange={handleFileChange}
+                    multiple
                   />
 
-                  {file ? (
-                    <div className="space-y-4">
-                      <div className="w-16 h-16 bg-white shadow-md border border-green-100 text-green-600 rounded-2xl flex items-center justify-center mx-auto transition-transform group-hover:scale-110">
-                        <CheckCircle2 className="w-8 h-8" />
+                  {files.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4" onClick={(e) => e.stopPropagation()}>
+                      {files.map((f, idx) => {
+                        const isImage = f.type.startsWith('image/');
+                        return (
+                          <div
+                            key={idx}
+                            className="relative group/item border border-slate-200 rounded-xl p-3 bg-white hover:border-blue-400 transition-all flex flex-col justify-between"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFiles(prev => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="absolute -top-2 -right-2 bg-red-100 hover:bg-red-200 text-red-600 rounded-full p-1 shadow-sm transition-colors z-10"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                            <div className="space-y-2">
+                              <div className="aspect-[4/3] bg-slate-50 rounded-lg overflow-hidden flex items-center justify-center border border-slate-100">
+                                {isImage ? (
+                                  <img
+                                    src={URL.createObjectURL(f)}
+                                    alt={f.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <FileUp className="w-8 h-8 text-slate-400" />
+                                )}
+                              </div>
+                              <div className="text-left">
+                                <p className="text-xs font-bold text-slate-800 truncate" title={f.name}>
+                                  Trang {idx + 1}: {f.name}
+                                </p>
+                                <p className="text-[10px] text-slate-400 uppercase font-bold">
+                                  {(f.size / 1024 / 1024).toFixed(2)} MB
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div
+                        onClick={() => document.getElementById('file-upload')?.click()}
+                        className="border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/20 rounded-xl p-3 flex flex-col items-center justify-center gap-2 transition-all cursor-pointer aspect-[4/3]"
+                      >
+                        <Plus className="w-6 h-6 text-slate-400" />
+                        <span className="text-xs font-bold text-slate-500">Thêm trang</span>
                       </div>
-                      <div>
-                        <p className="font-bold text-slate-800">{file.name}</p>
-                        <p className="text-[10px] text-slate-400 uppercase font-bold">Size: {(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                      </div>
-                      <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); setFile(null); }} className="text-red-500 hover:bg-red-50 hover:text-red-600 border-red-100 h-8 rounded-lg text-xs">Hủy bỏ & tải lại</Button>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -200,7 +305,7 @@ export default function SubmissionUpload() {
               <Button
                 size="lg"
                 className="gap-2 px-10 h-12 rounded-xl bg-blue-600 hover:bg-blue-700 shadow-md transition-all active:scale-95 disabled:shadow-none"
-                disabled={!file || !selectedExamId || isProcessing}
+                disabled={files.length === 0 || !selectedExamId || isProcessing}
                 onClick={handleUpload}
               >
                 {isProcessing ? (

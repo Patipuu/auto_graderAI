@@ -22,6 +22,7 @@ export default function Results() {
   const [isEvaluating, setIsEvaluating] = useState<number[]>([]);
   const [overallFeedback, setOverallFeedback] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activePage, setActivePage] = useState(0);
 
   // Highlight state: questionNum -> array of highlights
   const [highlights, setHighlights] = useState<Record<number, Array<{ id: string, text: string, note: string }>>>({});
@@ -57,6 +58,7 @@ export default function Results() {
         const data = await res.json();
         setSubmission(data);
         setOverallFeedback(data.overallFeedback || '');
+        setActivePage(0);
 
         // Extract highlights from results
         const loadedHighlights: Record<number, any[]> = {};
@@ -702,59 +704,94 @@ export default function Results() {
                    {submission.gradingType === 'OMR' ? 'OMR OpenCV' : 'Hybrid Text OCR'}
                 </Badge>
              </CardHeader>
-             <CardContent className="p-4 flex items-center justify-center">
-                {submission.gradingType === 'OMR' && submission.markedImage ? (
-                  <img src={submission.markedImage} alt="OMR Results" className="w-full h-auto rounded-xl shadow-sm border border-slate-100" />
-                ) : submission.studentImage ? (
-                  <div className="relative w-full overflow-hidden rounded-xl border border-slate-100 shadow-sm bg-slate-50">
-                    <img src={submission.studentImage} alt="Student Handwriting" className="w-full h-auto block" />
-                    
-                    {/* Bounding box SVG/HTML Overlay */}
-                    <div className="absolute inset-0 pointer-events-auto">
-                      {submission.results?.map((res: any) => {
-                         if (!res.boundingBox) return null;
-                         const [ymin, xmin, ymax, xmax] = res.boundingBox;
-                         const top = ymin / 10;
-                         const left = xmin / 10;
-                         const height = (ymax - ymin) / 10;
-                         const width = (xmax - xmin) / 10;
-                         const isCorrect = res.isCorrect;
-                         return (
-                           <div
-                             key={res.questionNum}
-                             style={{
-                               position: 'absolute',
-                               top: `${top}%`,
-                               left: `${left}%`,
-                               width: `${width}%`,
-                               height: `${height}%`,
-                               border: `2px solid ${isCorrect ? '#22c55e' : '#ef4444'}`,
-                               backgroundColor: `${isCorrect ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)'}`,
-                             }}
-                             className="group transition-all hover:bg-black/10 rounded cursor-help"
-                           >
-                             <span className={cn(
-                               "absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-black text-white shadow-sm pointer-events-none whitespace-nowrap",
-                               isCorrect ? "bg-green-600" : "bg-red-500"
-                             )}>
-                               Câu {res.questionNum}: {res.score}đ
-                             </span>
-                             
-                             {/* Hover tooltip showing feedback */}
-                             <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-6 w-48 p-2 bg-slate-900 text-white text-[10px] rounded shadow-lg z-50 pointer-events-none">
-                               <p className="font-bold">Câu {res.questionNum}: {res.score}/{res.maxScore}đ</p>
-                               <p className="mt-1 line-clamp-3">{res.feedback}</p>
-                             </div>
-                           </div>
-                         );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-12 text-center text-slate-400 italic text-xs">
-                     Không tìm thấy ảnh bài làm gốc.
-                  </div>
-                )}
+             <CardContent className="p-4 flex flex-col items-center justify-center">
+                {(() => {
+                  const studentImages = Array.isArray(submission.studentImage)
+                    ? submission.studentImage
+                    : submission.studentImage
+                      ? [submission.studentImage]
+                      : [];
+
+                  if (submission.gradingType === 'OMR' && submission.markedImage) {
+                    return <img src={submission.markedImage} alt="OMR Results" className="w-full h-auto rounded-xl shadow-sm border border-slate-100" />;
+                  } else if (studentImages.length > 0) {
+                    return (
+                      <div className="w-full">
+                        {studentImages.length > 1 && (
+                          <div className="flex flex-wrap gap-1.5 mb-4 overflow-x-auto pb-2 w-full justify-start border-b border-slate-100">
+                            {studentImages.map((_, idx) => (
+                              <Button
+                                key={idx}
+                                variant={activePage === idx ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => setActivePage(idx)}
+                                className={cn(
+                                  "h-8 rounded-lg text-xs font-bold px-3",
+                                  activePage === idx ? "bg-blue-600 hover:bg-blue-700 text-white border-blue-600" : "border-slate-200 text-slate-600"
+                                )}
+                              >
+                                Trang {idx + 1}
+                              </Button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="relative w-full overflow-hidden rounded-xl border border-slate-100 shadow-sm bg-slate-50">
+                          <img src={studentImages[activePage]} alt={`Student Handwriting - Page ${activePage + 1}`} className="w-full h-auto block" />
+                          
+                          {/* Bounding box SVG/HTML Overlay */}
+                          <div className="absolute inset-0 pointer-events-auto">
+                            {submission.results?.map((res: any) => {
+                               if (!res.boundingBox) return null;
+                               const resPage = res.pageIndex ?? 0;
+                               if (resPage !== activePage) return null;
+
+                               const [ymin, xmin, ymax, xmax] = res.boundingBox;
+                               const top = ymin / 10;
+                               const left = xmin / 10;
+                               const height = (ymax - ymin) / 10;
+                               const width = (xmax - xmin) / 10;
+                               const isCorrect = res.isCorrect;
+                               return (
+                                 <div
+                                   key={res.questionNum}
+                                   style={{
+                                     position: 'absolute',
+                                     top: `${top}%`,
+                                     left: `${left}%`,
+                                     width: `${width}%`,
+                                     height: `${height}%`,
+                                     border: `2px solid ${isCorrect ? '#22c55e' : '#ef4444'}`,
+                                     backgroundColor: `${isCorrect ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)'}`,
+                                   }}
+                                   className="group transition-all hover:bg-black/10 rounded cursor-help"
+                                 >
+                                   <span className={cn(
+                                     "absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-black text-white shadow-sm pointer-events-none whitespace-nowrap",
+                                     isCorrect ? "bg-green-600" : "bg-red-500"
+                                   )}>
+                                     Câu {res.questionNum}: {res.score}đ
+                                   </span>
+                                   
+                                   {/* Hover tooltip showing feedback */}
+                                   <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-6 w-72 p-3 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl z-50 pointer-events-none whitespace-pre-wrap leading-relaxed">
+                                     <p className="font-bold border-b border-slate-700 pb-1.5 mb-1.5 text-xs text-blue-400">Câu {res.questionNum}: {res.score}/{res.maxScore}đ</p>
+                                     <p className="text-slate-200">{res.feedback}</p>
+                                   </div>
+                                 </div>
+                               );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="py-12 text-center text-slate-400 italic text-xs">
+                        Không tìm thấy ảnh bài làm gốc.
+                      </div>
+                    );
+                  }
+                })()}
              </CardContent>
           </Card>
         </div>

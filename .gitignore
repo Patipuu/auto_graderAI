@@ -41,3 +41,6 @@ htmlcov/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Uploaded student photos
+backend/static/uploads/

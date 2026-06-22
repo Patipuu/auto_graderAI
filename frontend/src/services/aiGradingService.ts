@@ -34,18 +34,27 @@ const parseApiResponse = async <T>(response: Response): Promise<T> => {
 
 export const aiGradingService = {
   async gradeSubmission(
-    base64Image: string,
-    mimeType: string,
+    base64Image: string | string[],
+    mimeType: string | string[],
     examId: string,
     gradingType?: string
   ): Promise<SubmissionGradeResult> {
+    const body: any = { examId, gradingType };
+    if (Array.isArray(base64Image)) {
+      body.base64Images = base64Image;
+      body.mimeTypes = mimeType;
+    } else {
+      body.base64Image = base64Image;
+      body.mimeType = mimeType;
+    }
+
     const response = await fetch('/api/ai/grade-submission', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders()
       },
-      body: JSON.stringify({ base64Image, mimeType, examId, gradingType })
+      body: JSON.stringify(body)
     });
 
     return parseApiResponse<SubmissionGradeResult>(response);
