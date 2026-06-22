@@ -736,51 +736,61 @@ export default function Results() {
                           </div>
                         )}
                         <div className="relative w-full overflow-hidden rounded-xl border border-slate-100 shadow-sm bg-slate-50">
-                          <img src={studentImages[activePage]} alt={`Student Handwriting - Page ${activePage + 1}`} className="w-full h-auto block" />
-                          
-                          {/* Bounding box SVG/HTML Overlay */}
-                          <div className="absolute inset-0 pointer-events-auto">
-                            {submission.results?.map((res: any) => {
-                               if (!res.boundingBox) return null;
-                               const resPage = res.pageIndex ?? 0;
-                               if (resPage !== activePage) return null;
+                          {studentImages[activePage].toLowerCase().endsWith('.pdf') ? (
+                            <iframe 
+                              src={studentImages[activePage]} 
+                              title={`Student Handwriting - Page ${activePage + 1}`} 
+                              className="w-full h-[800px] block border-none" 
+                            />
+                          ) : (
+                            <>
+                              <img src={studentImages[activePage]} alt={`Student Handwriting - Page ${activePage + 1}`} className="w-full h-auto block" />
+                              
+                              {/* Bounding box SVG/HTML Overlay */}
+                              <div className="absolute inset-0 pointer-events-auto">
+                                {submission.results?.map((res: any) => {
+                                   if (!res.boundingBox) return null;
+                                   const resPage = res.pageIndex ?? 0;
+                                   if (resPage !== activePage) return null;
 
-                               const [ymin, xmin, ymax, xmax] = res.boundingBox;
-                               const top = ymin / 10;
-                               const left = xmin / 10;
-                               const height = (ymax - ymin) / 10;
-                               const width = (xmax - xmin) / 10;
-                               const isCorrect = res.isCorrect;
-                               return (
-                                 <div
-                                   key={res.questionNum}
-                                   style={{
-                                     position: 'absolute',
-                                     top: `${top}%`,
-                                     left: `${left}%`,
-                                     width: `${width}%`,
-                                     height: `${height}%`,
-                                     border: `2px solid ${isCorrect ? '#22c55e' : '#ef4444'}`,
-                                     backgroundColor: `${isCorrect ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)'}`,
-                                   }}
-                                   className="group transition-all hover:bg-black/10 rounded cursor-help"
-                                 >
-                                   <span className={cn(
-                                     "absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-black text-white shadow-sm pointer-events-none whitespace-nowrap",
-                                     isCorrect ? "bg-green-600" : "bg-red-500"
-                                   )}>
-                                     Câu {res.questionNum}: {res.score}đ
-                                   </span>
-                                   
-                                   {/* Hover tooltip showing feedback */}
-                                   <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-6 w-72 p-3 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl z-50 pointer-events-none whitespace-pre-wrap leading-relaxed">
-                                     <p className="font-bold border-b border-slate-700 pb-1.5 mb-1.5 text-xs text-blue-400">Câu {res.questionNum}: {res.score}/{res.maxScore}đ</p>
-                                     <p className="text-slate-200">{res.feedback}</p>
-                                   </div>
-                                 </div>
-                               );
-                            })}
-                          </div>
+                                   const [ymin, xmin, ymax, xmax] = res.boundingBox;
+                                   const top = ymin / 10;
+                                   const left = xmin / 10;
+                                   const height = (ymax - ymin) / 10;
+                                   const width = (xmax - xmin) / 10;
+                                   const isCorrect = res.isCorrect;
+                                   return (
+                                     <div
+                                       key={res.questionNum}
+                                       style={{
+                                         position: 'absolute',
+                                         top: `${top}%`,
+                                         left: `${left}%`,
+                                         width: `${width}%`,
+                                         height: `${height}%`,
+                                         border: `2px solid ${isCorrect ? '#22c55e' : '#ef4444'}`,
+                                         backgroundColor: `${isCorrect ? 'rgba(34, 197, 94, 0.05)' : 'rgba(239, 68, 68, 0.05)'}`,
+                                       }}
+                                       className="group transition-all hover:bg-black/10 rounded cursor-help"
+                                     >
+                                       <span className={cn(
+                                         "absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-black text-white shadow-sm pointer-events-none whitespace-nowrap",
+                                         isCorrect ? "bg-green-600" : "bg-red-500"
+                                       )}>
+                                         Câu {res.questionNum}: {res.score}đ
+                                       </span>
+                                       
+                                       {/* Hover tooltip showing feedback */}
+                                       <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-6 w-72 p-3 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl z-50 pointer-events-none whitespace-pre-wrap leading-relaxed">
+                                         <p className="font-bold border-b border-slate-700 pb-1.5 mb-1.5 text-xs text-blue-400">Câu {res.questionNum}: {res.score}/{res.maxScore}đ</p>
+                                         <p className="text-slate-200">{res.feedback}</p>
+                                       </div>
+                                     </div>
+                                   );
+                                })}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     );

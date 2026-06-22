@@ -39,6 +39,18 @@ def get_duplicate_student_ids():
         'duplicates': duplicates,
     }), 200
 
+@submission_bp.route('/api/submissions/duplicates/confirm', methods=['POST'])
+def confirm_duplicate_student():
+    """Confirm that submissions with the same MSHS belong to the same student"""
+    data = request.json or {}
+    student_id = data.get('studentId')
+
+    if not student_id:
+        return jsonify({'success': False, 'message': 'Missing studentId'}), 400
+
+    updated_count = SubmissionService.confirm_student_id(student_id)
+    return jsonify({'success': True, 'updatedCount': updated_count}), 200
+
 @submission_bp.route('/api/submissions/check-student-id', methods=['GET'])
 def check_student_id():
     """Check whether an MSHS already exists on other submissions"""
