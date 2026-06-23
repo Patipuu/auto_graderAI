@@ -143,16 +143,18 @@ def grade_bubble_sheet(base64_image: str, mime_type: str, exam: Dict[str, Any]) 
     M = cv2.getPerspectiveTransform(pts_src, pts_dst)
     warped = cv2.warpPerspective(img, M, (2480, 3508))
     
+    # Get layout constants
+    layout = get_omr_layout(question_count)
+    
     # 2. Prepare threshold image for bubble density checking
     gray_warped = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+    # Calculate block size dynamically based on bubble radius to ensure it is much larger than bubble diameter (so local background is captured)
+    b_size = int(layout["bubble_radius"] * 5) | 1
     # Adaptive thresholding to convert to binary (filled parts become white pixels)
     thresh_warped = cv2.adaptiveThreshold(
         gray_warped, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV, 55, 15
+        cv2.THRESH_BINARY_INV, b_size, 15
     )
-    
-    # Get layout constants
-    layout = get_omr_layout(question_count)
     
     results = []
     total_score = 0.0
@@ -187,7 +189,7 @@ def grade_bubble_sheet(base64_image: str, mime_type: str, exam: Dict[str, Any]) 
                 filled_ratios.append(0.0)
                 
         # Determine student answer based on density
-        threshold = 0.22
+        threshold = 0.30
         filled_indices = [i for i, ratio in enumerate(filled_ratios) if ratio >= threshold]
         
         if len(filled_indices) == 0:
@@ -195,9 +197,9 @@ def grade_bubble_sheet(base64_image: str, mime_type: str, exam: Dict[str, Any]) 
         elif len(filled_indices) == 1:
             student_ans = options[filled_indices[0]]
         else:
-            # Check if there is a clear winner
+            # Check if there is a clear winner (one is clearly shaded more than the next)
             sorted_ratios = sorted([(ratio, idx) for idx, ratio in enumerate(filled_ratios)], reverse=True)
-            if sorted_ratios[0][0] - sorted_ratios[1][0] > 0.20:
+            if sorted_ratios[0][0] - sorted_ratios[1][0] > 0.15:
                 student_ans = options[sorted_ratios[0][1]]
             else:
                 student_ans = "".join([options[i] for i in filled_indices])  # multiple selection
